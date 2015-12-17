@@ -57,14 +57,14 @@ namespace ImprovedNonAtmosphericLandings
             GUILayout.Space(5.0f);
             if (GUILayout.Button("Calculate descent"))
             {
-                inalCalculator.BackgroundCalculateResult();
+                inalCalculator.CalculateResult();
 
             }
             GUILayout.Space(5.0f);
             GUILayout.TextArea(inalCalculator.GetStatus());
             GUILayout.TextArea(inalCalculator.GetStringResult());
 
-            if (GUILayout.Button("Cancel calculation"))
+            if (GUILayout.Button("Bloop"))
             {
                 inalCalculator.Stop();
             }
