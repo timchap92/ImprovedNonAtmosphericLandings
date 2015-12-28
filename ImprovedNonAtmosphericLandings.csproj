@@ -52,6 +52,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="InalAutopilot.cs" />
     <Compile Include="InalCalculator.cs" />
     <Compile Include="InalGui.cs" />
     <Compile Include="Resources.cs" />

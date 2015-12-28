@@ -13,7 +13,10 @@ namespace ImprovedNonAtmosphericLandings
         private Boolean drawWindow = false;
         private Rect windowPosition = new Rect(20, 200, 300, 0);
         private GUIStyle windowStyle = null;
-        private InalCalculator inalCalculator;
+        private double startUT;
+
+        private InalCalculator inalCalculator = new InalCalculator();
+        private InalAutopilot autopilot = new InalAutopilot();
 
         private void Awake()
         {
@@ -29,7 +32,7 @@ namespace ImprovedNonAtmosphericLandings
         {
             Logger.Info("Opening window");
             drawWindow = true;
-            inalCalculator = new InalCalculator();
+
         }
 
         public void closeWindow()
@@ -62,11 +65,15 @@ namespace ImprovedNonAtmosphericLandings
             }
             GUILayout.Space(5.0f);
             GUILayout.TextArea(inalCalculator.GetStatus());
-            GUILayout.TextArea(inalCalculator.GetStringResult());
+            GUILayout.TextArea(inalCalculator.GetTMinus());
 
-            if (GUILayout.Button("Bloop"))
+            if (inalCalculator.IsComplete())
             {
-                inalCalculator.Stop();
+                if (GUILayout.Button("Activate Autopilot"))
+                {
+                    Logger.Info("Activating autopilot.");
+                    autopilot.Activate(inalCalculator);
+                }
             }
 
             GUILayout.EndVertical();

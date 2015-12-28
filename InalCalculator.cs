@@ -14,10 +14,11 @@ namespace ImprovedNonAtmosphericLandings
         //Thread stuff
         private Thread calcThread;
         private volatile Boolean shouldStop;
-        private volatile float result;
-        private String stringResult = string.Empty;
-        private volatile String status = string.Empty;
+        private double resultUT;
+        private String tMinus = string.Empty;
+        private String status = string.Empty;
         private readonly object statusLock = new System.Object();
+        bool success = false;
 
         //Calculation stuff
         private CelestialBody body;
@@ -25,25 +26,48 @@ namespace ImprovedNonAtmosphericLandings
         private double thrust;
         private double fuelFlow;
         private double t0;
-        private Vector3d initialSrfVelocity;
-        private Vector3d initialPosition;
-        private double initialMass;
 
         //Calculation parameters
-        private int integrationSteps = 10;
-        private float targetStopAltitude = 100;
-        private float altitudeError = 100;
-        private float targetSpeed = 5;
-        private float speedError = 5;
+        private float targetAltitudeValue = 100;
+        private float altitudeError = 50;
+        private float targetSpeedValue = 10;
+        private float speedError = 10;
 
         public String GetStatus()
         {
             return status;
         }
 
-        public String GetStringResult()
+        public string GetTMinus()
         {
-            return stringResult;
+            if (success)
+            {
+                return (resultUT - Planetarium.GetUniversalTime()).ToString("N1");
+            }
+            else
+            {
+                return String.Empty;
+            }
+        }
+
+        public double GetResultUT()
+        {
+            return resultUT;
+        }
+
+        public bool IsComplete()
+        {
+            return success;
+        }
+
+        public double GetMaxSpeed()
+        {
+            return targetSpeedValue + speedError;
+        }
+
+        public double GetMinSpeed()
+        {
+            return targetSpeedValue - speedError;
         }
 
         public void Stop()
@@ -58,8 +82,10 @@ namespace ImprovedNonAtmosphericLandings
             //Must be descending
             //Must be on suborbital path
             //Must have TWR > 1 at surface
-
+            
             Logger.Info("Beginning calculation.");
+
+            success = false;
 
             vessel = FlightGlobals.ActiveVessel;
             body = vessel.mainBody;
@@ -72,23 +98,14 @@ namespace ImprovedNonAtmosphericLandings
             //The time at which we start retrograde thrusting
             double startTimeOfThrust = 0;
 
-            //The calculated terrain altitude and time of stop
-            double radarAltitudeOfStop;
-            double expectedTimeToStop;
+            //The number of integration steps for each simulation
+            int integrationSteps = 10;
 
             //What happens if we start burning immediately?
-            initialPosition = vessel.GetWorldPos3D();
-            initialSrfVelocity = vessel.srf_velocity;
-            initialMass = vessel.totalMass;
-
-            //Based on the initial velocity, compute an approximate stopping duration
-            expectedTimeToStop = Vector3d.Magnitude(initialSrfVelocity) * initialMass / (thrust - Vector3d.Magnitude(FlightGlobals.getGeeForceAtPosition(initialPosition)));
-            double timeStep = (double) expectedTimeToStop / integrationSteps;
-
-            StopObject immediateBurn = GetTimeAndTerrainAltitudeOfStop(startTimeOfThrust, timeStep);
+            IterationResult initialTest = simulateThrust(startTimeOfThrust, integrationSteps);
             
             //If immediate thrust does not bring the ship to a stop in time, we are in trouble.
-            if (immediateBurn.altitude < 0)
+            if (initialTest == IterationResult.TOO_LATE)
             {
                 Logger.Info("Cannot bring ship to a stop in time.");
                 return;
@@ -98,9 +115,14 @@ namespace ImprovedNonAtmosphericLandings
             double shortTime = 0;
             double longTime = ComputeImpactTime();
 
+            Logger.Info("Impact will occur in " + longTime.ToString("E2") + " seconds.");
+
             //Counter
             int i = 0;
 
+            //The result of each iteration
+            IterationResult iterationResult;
+            
             //Main loop that computes 
             do
             {
@@ -108,160 +130,289 @@ namespace ImprovedNonAtmosphericLandings
 
                 startTimeOfThrust = (shortTime + longTime) / 2;
 
-                //Calculate the initial position, velocity and mass (i.e. just before the burn commences)
-                initialPosition = vessel.GetOrbit().getPositionAtUT(t0 + startTimeOfThrust);
-                initialSrfVelocity = GetSurfaceVelocity(initialPosition, vessel.orbit.getOrbitalVelocityAtUT(t0 + startTimeOfThrust));
-                initialMass = vessel.totalMass;
+                Logger.Info("Computing approximation " + i + " with " + integrationSteps + " integration steps. Start time of thrust is " + startTimeOfThrust);
+                
+                //Iterate for this start time
+                iterationResult = simulateThrust(startTimeOfThrust, integrationSteps);
 
-                //Based on the initial velocity, compute an approximate stopping duration
-                expectedTimeToStop = Vector3d.Magnitude(initialSrfVelocity) * initialMass / (thrust - Vector3d.Magnitude(FlightGlobals.getGeeForceAtPosition(initialPosition)));
-
-                timeStep = (double) expectedTimeToStop / integrationSteps;
-
-                Logger.Info("Computing approximation " + i + ". Thrust begins " + startTimeOfThrust.ToString("E2") + " from now. Timestep is " + timeStep);
-
-                //Calculate the altitude and time of this iteration
-                StopObject thisStop = GetTimeAndTerrainAltitudeOfStop(startTimeOfThrust, timeStep);
-                radarAltitudeOfStop = thisStop.altitude;
-                expectedTimeToStop = thisStop.time;
-
-                Logger.Info("Thrust at time [" + startTimeOfThrust.ToString("E2") + "s] results in rest terrain altitude of [" + radarAltitudeOfStop.ToString("N1") + "m]");
-
-                if (radarAltitudeOfStop < targetStopAltitude)
+                if (iterationResult == IterationResult.MORE_ACCURACY)
                 {
-                    //Initiated thrust too late, therefore try earlier
-                    longTime = startTimeOfThrust;
-                    startTimeOfThrust = (startTimeOfThrust + shortTime) / 2;
+                    Logger.Info("Increasing accuracy from " + integrationSteps + "integration steps.");
+                    integrationSteps = integrationSteps * 2;
                 }
-                else
+                else if (iterationResult == IterationResult.TOO_EARLY)
                 {
-                    //Initiated thrust too early, therefore try later
+                    Logger.Info("Starting thrust at " + startTimeOfThrust + " was too early. Trying later.");
                     shortTime = startTimeOfThrust;
-                    startTimeOfThrust = (startTimeOfThrust + longTime) / 2;
                 }
+                else if (iterationResult == IterationResult.TOO_LATE)
+                {
+                    Logger.Info("Starting thrust at " + startTimeOfThrust + " was too late. Trying earlier.");
+                    longTime = startTimeOfThrust;
+                }
+                
 
-            } while (!isWithinBounds(radarAltitudeOfStop));
+            } while (iterationResult != IterationResult.SUCCESS);
 
-            Logger.Info("Success!");
+            Logger.Info("Calculation successful. Thrust should start at UT " + (t0 + startTimeOfThrust));
+            resultUT = (t0 + startTimeOfThrust);
+            success = true;
         }
-    
-        private StopObject GetTimeAndTerrainAltitudeOfStop(double startTimeOfThrust, double timeStep)
+
+        private IterationResult simulateThrust(double startTimeOfThrust, int integrationSteps)
         {
-            Logger.Info("At start of burn, altitude is " + GetRadarAltitude(initialPosition, startTimeOfThrust).ToString("N1") + "m and speed is " + Vector3d.Magnitude(initialSrfVelocity).ToString("N1"));
+            //The vector arrays that will store upper- and lower- estimates for the initial position and velocity in each timestep
+            Vector3d[] initialPosition = new Vector3d[2];
+            Vector3d[] initialVelocity = new Vector3d[2];
 
-            //The initial velocity vector (not to be confused with the initial surface velocity vector
-            Vector3d initialVelocity = vessel.orbit.getOrbitalVelocityAtUT(t0 + startTimeOfThrust);
+            //The orbital status of the vessel immediately before thrust
+            initialPosition[0] = (vessel.GetOrbit().getPositionAtUT(t0 + startTimeOfThrust));
+            initialVelocity[0] = OrbitToWorld(vessel.GetOrbit().getOrbitalVelocityAtUT(t0 + startTimeOfThrust));
+            initialPosition[1] = initialPosition[0];
+            initialVelocity[1] = initialVelocity[0];
+            double mass = vessel.totalMass; //Known exactly between time steps
 
-            //Other integration step variables
-            Vector3d initialThrustAcc;
-            Vector3d initialGravAcc;
+            //Resulting quantities
+            Vector3d[] finalPosition = new Vector3d[2];
+            Vector3d[] finalVelocity = new Vector3d[2];
+            double[] finalSrfSpeed = new double[2];
+            double[] finalSrfAltitude = new double[2];
 
-            //Final motion values calculated from initial values
-            Vector3d finalPositionL;
-            Vector3d finalVelocityU;
+            //Other integration step values
+            Vector3d gravAcc;
+            Vector3d thrustAcc;
 
-            //Final vessel properties
-            Vector3d finalGravAcc;
-            double finalMass;
-            Vector3d finalThrustAcc;
+            //The points on the height-speed graph
+            double[] lowerPoint;
+            double[] upperPoint;
 
-            //Final motion values calculated from final values
-            Vector3d finalSrfVelocity;
-            Vector3d finalPositionU;
-            Vector3d finalVelocityL;
+            //Based on the initial velocity, compute an approximate stopping duration and use this to estimate a suitable time step
+            double initialSrfSpeed = Vector3d.Magnitude(GetSrfVelocity(initialPosition[0], initialVelocity[0]));
+            double expectedTimeToStop = initialSrfSpeed * mass / (thrust - Vector3d.Magnitude(FlightGlobals.getGeeForceAtPosition(initialPosition[0])));
+            double timeStep = (double)expectedTimeToStop / integrationSteps;
 
-            //Average values
-            Vector3d finalPositionMean;
-            Vector3d finalVelocityMean;
-
-            //The final speed squared
-            double sqrFinalSpeed;
+            Logger.Info("Thrust begins " + startTimeOfThrust.ToString("E2") + " from now. Timestep is " + timeStep);
+            Logger.Info("At start of burn, surface altitude is " + GetSrfAltitude(initialPosition[0], startTimeOfThrust).ToString("N1") + "m and surface speed is " + initialSrfSpeed.ToString("N1"));
+            Logger.Info("Angle between orbital velocity and surface velocity is " + Vector3d.Angle(initialVelocity[0], GetSrfVelocity(initialPosition[0], initialVelocity[0])));
 
             //The time from start of burn
             double burnTime = 0;
 
-            //The flag to continue the approximation
-            Boolean cont = true;
+            //The target surface heights and velocities
+            double[] targetAltitude = new double[2] { targetAltitudeValue - altitudeError, targetAltitudeValue + altitudeError };
+            double[] targetSpeed = new double[2] { targetSpeedValue - speedError, targetSpeedValue + speedError };
+            Rect targetArea = new Rect((float)targetAltitude[0], (float)targetSpeed[0], 2 * altitudeError, 2 * speedError);
 
-            //The final terrain altitude
-            double finalTerrainAltitude;
+            IterationResult iterationResult = IterationResult.INCOMPLETE;
+            
+            IterationResult[,,,] decisionArray = new IterationResult[3, 3, 3, 3];
+            /* OLD VERSION:
+            decisionArray[0, 2, 0, 2] = IterationResult.TOO_LATE;
+            decisionArray[0, 2, 0, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 2, 1, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 2, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 2, 1, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 2, 1, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 2, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 1, 0, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 2, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 1, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 1, 1, 1] = IterationResult.SUCCESS;
+            decisionArray[1, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 1, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 0, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 0, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 0, 2, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 0, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 0, 2, 0] = IterationResult.STEP_BACK;
+            decisionArray[2, 0, 2, 0] = IterationResult.TOO_EARLY;
+            */
 
-            //The following loop describes a single time step, averaging an over- and under- estimate
+            decisionArray[0, 2, 0, 2] = IterationResult.TOO_LATE;
+            decisionArray[0, 2, 0, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 2, 1, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 2, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 2, 1, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 2, 1, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 2, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 1, 0, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 1] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 2, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 1, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 1, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 1, 1, 1] = IterationResult.SUCCESS;
+            decisionArray[1, 1, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 1, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 0, 0, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 0, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[0, 0, 2, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 0, 1, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 0, 2, 0] = IterationResult.STEP_BACK;
+            decisionArray[2, 0, 2, 0] = IterationResult.TOO_EARLY;
+
+
+
+            //Counts the number of step-backs to avoid oscillation
+            int stepBackCounter = 0;
+
+            //This vector contains flags to detect whether the vessel is rising according to each estimate
+            bool[] rising = new bool[] { false, false };
+
+            //The following loop describes a single time step, testing an over- and under- estimate
             do
             {
-                //Calculate the acceleration on the vessel based on other parameters
-                initialGravAcc = FlightGlobals.getGeeForceAtPosition(initialPosition);
-                initialThrustAcc = thrust * Vector3d.Normalize(-initialSrfVelocity) / initialMass;
+                Logger.Info("Calculating step. Timestep is " + timeStep + ". Total burn time before this step is " + burnTime);
 
-                //Calculate motion deltas based on initial values
-                finalPositionL = initialPosition + initialVelocity * timeStep;
-                finalVelocityU = initialVelocity + (initialGravAcc + initialThrustAcc) * timeStep;
+                Vector3d[] initialPositionCopy = initialPosition;
+                Vector3d[] initialVelocityCopy = initialVelocity;
 
-                //Calculate new forces and masses
-                //TODO: Clamp this
-                finalMass = initialMass - fuelFlow * timeStep;
-                if (finalMass < 0)
+                //First generate an estimate using the initial values of the integration step
+                finalPosition[0] = initialPosition[0] + initialVelocity[0] * timeStep; //This line is altering initialPosition somehow MUST GET TO THE BOTTOM OF THIS
+                gravAcc = FlightGlobals.getGeeForceAtPosition(initialPosition[0]);
+                thrustAcc = thrust / mass * -GetSrfVelocity(initialPosition[0], initialVelocity[0]).normalized;
+                finalVelocity[0] = initialVelocity[0] + (gravAcc + thrustAcc) * timeStep;
+
+                //Then generate an estimate using the final values of the integration step
+                gravAcc = FlightGlobals.getGeeForceAtPosition(finalPosition[0]); //Assume this is close enough
+                thrustAcc = thrust / (mass - fuelFlow * timeStep) * -GetSrfVelocity(finalPosition[0], finalVelocity[0]).normalized;
+                finalVelocity[1] = initialVelocity[1] + (gravAcc + thrustAcc) * timeStep;
+                finalPosition[1] = initialPosition[1] + finalVelocity[1] * timeStep;
+
+                initialPosition = initialPositionCopy;
+                initialVelocity = initialVelocityCopy;
+                
+                Logger.Info("Final position is " + finalPosition[0].ToString());
+
+                //TODO: Complete this properly.
+                if (mass < 0)
                 {
-                    Logger.Warn("Not enough fuel to reach a stop.");
+                    Logger.Error("Couldn't complete maneuver without running out of fuel.");
+                    return IterationResult.INCOMPLETE;
                 }
 
-                finalSrfVelocity = GetSurfaceVelocity(finalPositionL, finalVelocityU);
-                finalGravAcc = FlightGlobals.getGeeForceAtPosition(finalPositionL);
-                finalThrustAcc = thrust * Vector3d.Normalize(-finalSrfVelocity) / finalMass;
-
-                //Calculate motion deltas based on final values
-                finalPositionU = initialPosition + finalVelocityU * timeStep;
-                finalVelocityL = initialVelocity + (finalGravAcc + finalThrustAcc) * timeStep;
-
-                finalPositionMean = (finalPositionL + finalPositionU) / 2;
-                finalVelocityMean = (finalVelocityL + finalVelocityU) / 2;
-
-                Logger.Info("Final position difference: " + Vector3d.Magnitude(finalPositionU - finalPositionL).ToString("E2") + ". Final velocity difference: " + Vector3d.Magnitude(finalVelocityU - finalVelocityL).ToString("E2"));
-
-                finalTerrainAltitude = GetRadarAltitude(finalPositionMean, t0 + startTimeOfThrust + burnTime);
-                var finalSrfSpeed = Vector3d.Magnitude(GetSurfaceVelocity(finalPositionMean, finalVelocityMean));
-
-                burnTime += timeStep;
-
-                Logger.Info("At " + burnTime.ToString("E2") + "s after burn start, altitude is " + finalTerrainAltitude.ToString("N1") + "m and speed is " + finalSrfSpeed.ToString("N1"));
-
-                if (isAscending(finalPositionMean, finalVelocityMean))
+                //Calculate the things we care about: surface height and speed
+                for (int j = 0; j < 2; j++)
                 {
-                    //Vessel started ascending before it was measured with an acceptable downward velocity.
-                    Logger.Info("Detected ascent. Trying with a smaller time increment.");
-
-                    burnTime -= timeStep;
-
-                    timeStep = timeStep / 2;
-                }
-                else
-                {
-                    initialPosition = finalPositionMean;
-                    initialSrfVelocity = finalVelocityMean;
-                    initialMass = finalMass;
-
-                    //Test if the vessel has slow to an acceptable speed
-                    if (finalSrfSpeed < targetSpeed + speedError)
-                    {
-                        Logger.Info("Calculation halted.");
-                        cont = false;
-                    }
-                    
+                    finalSrfSpeed[j] = Vector3d.Magnitude(GetSrfVelocity(finalPosition[j], finalVelocity[j]));
+                    finalSrfAltitude[j] = GetSrfAltitude(finalPosition[j], startTimeOfThrust + burnTime);
                 }
                 
+                Logger.Info("Final surface speed estimates are [" + finalSrfSpeed[0].ToString("E2") + ", " + finalSrfSpeed[1].ToString("E2") +
+                    "]. Final surface altitude estimates are [" + finalSrfAltitude[0].ToString("E2") + ", " + finalSrfAltitude[1].ToString("E2") + "].");
+                
+                //TODO: Test that each estimate is lower/higher as expected
+                if (finalSrfSpeed[0] > finalSrfSpeed[1])
+                {
+                    Logger.Warn("Surface velocity estimates are reversed");
+                    finalSrfSpeed.Reverse();
+                }
+                if (finalSrfAltitude[0] > finalSrfAltitude[1])
+                {
+                    Logger.Warn("Surface altitude estimates are reversed");
+                    finalSrfAltitude.Reverse();
+                }
 
-            } while (cont);
+                //Determine if we have overshot and started rising again
+                for (int j = 0; j < 2; j++)
+                {
+                    if (Vector3d.Dot(finalVelocity[j], body.position - finalPosition[j]) < 0)
+                    {
+                        rising[j] = true;
+                    }
+                }
+                
+                //Figure out what's going on
+                if (finalSrfAltitude[0] < targetAltitude[1] || finalSrfSpeed[0] < targetSpeed[1] || rising.Contains(true)) //A broad test to reduce the processing for ordinary iteration cases
+                {
+                    lowerPoint = new double[] { finalSrfAltitude[1], finalSrfSpeed[0] };
+                    upperPoint = new double[] { finalSrfAltitude[0], finalSrfSpeed[1] };
 
 
-            return new StopObject(burnTime, finalTerrainAltitude);
+                    double[][] points = new double[][] { upperPoint, lowerPoint };
+                    int[] regions = new int[4]; //This contains the location of the two points in the 3-by-3 space in the form [upper.x, upper.y, lower.x, lower.y]
+                    for (int j = 0; j < 2; j++)
+                    {
+                        if (points[j][0] < targetAltitude[0]) { regions[2 * j] = 0; }
+                        else if (points[j][0] > targetAltitude[1]) { regions[2 * j] = 2; }
+                        else { regions[2 * j] = 1; }
+
+                        if (points[j][1] < targetSpeed[0]) { regions[2 * j + 1] = 0; }
+                        else if (points[j][1] > targetSpeed[1]) { regions[2 * j + 1] = 2; }
+                        else { regions[2 * j + 1] = 1; }
+                        
+                    }
+                    
+                    if (rising[0] || rising[1])
+                    {
+                        Logger.Info("Detected rising vessel.");
+
+                        //If at least one estimate suggests vessel is rising, set the lower point to region 0
+                        regions[3] = 0;
+
+                        if (rising[0] && rising[1])
+                        {
+                            //If both estimates suggest vessel is rising, set the upper point to region 0 as well
+                            regions[1] = 0;
+                        }
+                    }
+                    
+                    //Logger.Info("Upper point lies in region [" + points[0][0] + ", " + points[0][1] + "]. Lower point lies in  region [" + points[1][0] + ", " + points[1][1] + "].");
+                    Logger.Info("Points lie in regions [" + regions[0] + ", " + regions[1] + "] and [" + regions[2] + ", " + regions[3] + "].");
+                    
+                    try
+                    {
+                        iterationResult = decisionArray[regions[0], regions[1], regions[2], regions[3]];
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Warn(e.Message);
+                        iterationResult = IterationResult.INCOMPLETE;
+                    }
+                    Logger.Info("Decision was iteration result: " + iterationResult);
+
+                    if (iterationResult == IterationResult.STEP_BACK)
+                    {
+                        stepBackCounter++;
+                        if (stepBackCounter > 10)
+                        {
+                            Logger.Info("Too many step-backs, detected oscillation. Requesting more accuracy.");
+                            return IterationResult.MORE_ACCURACY;
+                        }
+                        else
+                        {
+                            Logger.Info("Stepping back.");
+                            iterationResult = IterationResult.INCOMPLETE;
+                            timeStep = timeStep / 2;
+                            
+                            continue;
+                        }
+                    }
+                }
+
+                //Progress values:
+                Logger.Info("Progressing values");
+                mass = mass - fuelFlow * timeStep;
+                initialPosition = finalPosition;
+                initialVelocity = finalVelocity;
+                burnTime += timeStep;
+
+            } while (iterationResult == IterationResult.INCOMPLETE);
+
+
+            return iterationResult;
         }
 
-        public Boolean isAscending(Vector3d position, Vector3d velocity)
-        {
-            return Vector3d.Dot(velocity, (body.position - position)) < 0;
-        }
-
-        private double GetRadarAltitude(Vector3d worldPos, double deltaT)
+        private double GetSrfAltitude(Vector3d worldPos, double deltaT)
         {
             double bodyRot = 360 * deltaT / body.rotationPeriod;
 
@@ -274,29 +425,26 @@ namespace ImprovedNonAtmosphericLandings
             return Vector3d.Magnitude(worldPos - body.position) - terrainHeight;
         }
 
-
-        public class StopObject
+        private Vector3d GetSrfVelocity(Vector3d worldPos, Vector3d worldVelocity)
         {
-            public StopObject(double time, double altitude)
-            {
-                this.time = time;
-                this.altitude = altitude;
-            }
-            public double altitude { get; set; }
-            public double time { get; set; }
+            return worldVelocity - body.getRFrmVel(worldPos);
         }
 
-
-        private Boolean isWithinBounds(double altitudeOfStop)
+        private Vector3d GetWorldVelocity(Vector3d worldPos, Vector3d srfVelocity)
         {
-            return ((altitudeOfStop < targetStopAltitude + altitudeError) && (altitudeOfStop > targetStopAltitude - altitudeError));
+            return srfVelocity + body.getRFrmVel(worldPos);
         }
 
-        private Vector3d GetSurfaceVelocity(Vector3d worldPos, Vector3d velocity)
+        private Vector3d OrbitToWorld(Vector3d orbitVector)
         {
-            return velocity - body.getRFrmVel(worldPos);
+            return new Vector3d(orbitVector.x, orbitVector.z, orbitVector.y);
         }
 
+        private enum IterationResult
+        {
+            INCOMPLETE, TOO_EARLY, TOO_LATE, MORE_ACCURACY, STEP_BACK, SUCCESS
+        }
+        
         #region Time to impact copied and modified from KER
 
         public double ComputeImpactTime()
@@ -446,7 +594,7 @@ namespace ImprovedNonAtmosphericLandings
 
         private double CalculateFuelFlow()
         {
-            return 14.56737 * 5d / 1000;
+            return 14.56737 * 5 / 1000d;
         }
 
         #endregion
