@@ -13,7 +13,6 @@ namespace ImprovedNonAtmosphericLandings
         private Boolean drawWindow = false;
         private Rect windowPosition = new Rect(20, 200, 300, 0);
         private GUIStyle windowStyle = null;
-        private double startUT;
 
         private InalCalculator inalCalculator = new InalCalculator();
         private InalAutopilot autopilot = new InalAutopilot();
@@ -58,24 +57,39 @@ namespace ImprovedNonAtmosphericLandings
         {
             GUILayout.BeginVertical();
             GUILayout.Space(5.0f);
-            if (GUILayout.Button("Calculate descent"))
+            
+            if (!autopilot.isActive)
             {
-                inalCalculator.CalculateResult();
-
-            }
-            GUILayout.Space(5.0f);
-            GUILayout.TextArea(inalCalculator.GetStatus());
-            GUILayout.TextArea(inalCalculator.GetTMinus());
-
-            if (inalCalculator.IsComplete())
-            {
-                if (GUILayout.Button("Activate Autopilot"))
+                if (GUILayout.Button("Calculate descent"))
                 {
-                    Logger.Info("Activating autopilot.");
-                    autopilot.Activate(inalCalculator);
+                    inalCalculator.CalculateResult();
+
+                }
+
+                if (inalCalculator.IsComplete())
+                {
+                    if (GUILayout.Button("Activate Autopilot"))
+                    {
+                        Logger.Info("Activating autopilot.");
+                        autopilot.Activate(inalCalculator);
+                    }
+
+                    GUILayout.TextArea(inalCalculator.GetTMinus());
                 }
             }
+            else
+            {
+                GUILayout.TextArea(autopilot.GetState().ToString());
 
+                GUILayout.TextArea(inalCalculator.GetTMinus());
+
+                if (GUILayout.Button("Deactivate Autopilot"))
+                {
+                    autopilot.Deactivate();
+                }
+            }
+            
+            GUILayout.Space(5.0f);
             GUILayout.EndVertical();
             GUI.DragWindow();
         }

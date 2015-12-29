@@ -15,6 +15,12 @@ namespace ImprovedNonAtmosphericLandings
         private double minSpeed;
         private AutopilotState state = AutopilotState.FREEFALL;
         private Vessel vessel;
+        public bool isActive = false;
+
+        public AutopilotState GetState()
+        {
+            return state;
+        }
 
         public void Activate(InalCalculator inalCalculator)
         {
@@ -26,11 +32,12 @@ namespace ImprovedNonAtmosphericLandings
 
             //Register autopilot
             vessel.OnFlyByWire += new FlightInputCallback(fly);
+            isActive = true;
         }
 
-        private enum AutopilotState
+        public enum AutopilotState
         {
-            FREEFALL, MAIN_DESCENT, FINAL_DESCENT
+            FREEFALL, MAIN_DESCENT, FINAL_DESCENT, LANDED
         }
 
         public void fly(FlightCtrlState s)
@@ -65,8 +72,19 @@ namespace ImprovedNonAtmosphericLandings
                 if (vessel.Landed)
                 {
                     Logger.Info("Vessel landed.");
+                    state = AutopilotState.LANDED;
                     vessel.OnFlyByWire -= new FlightInputCallback(fly);
+                    isActive = false;
                 }
+            }
+        }
+
+        public void Deactivate()
+        {
+            if (isActive)
+            {
+                vessel.OnFlyByWire -= new FlightInputCallback(fly);
+                isActive = false;
             }
         }
 

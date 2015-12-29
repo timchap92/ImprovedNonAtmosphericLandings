@@ -30,8 +30,8 @@ namespace ImprovedNonAtmosphericLandings
         //Calculation parameters
         private float targetAltitudeValue = 100;
         private float altitudeError = 50;
-        private float targetSpeedValue = 10;
-        private float speedError = 10;
+        private float targetSpeedValue = 1.5F;
+        private float speedError = 1.5F;
 
         public String GetStatus()
         {
@@ -42,7 +42,8 @@ namespace ImprovedNonAtmosphericLandings
         {
             if (success)
             {
-                return (resultUT - Planetarium.GetUniversalTime()).ToString("N1");
+                TimeSpan timeToThrust = TimeSpan.FromSeconds(resultUT - Planetarium.GetUniversalTime());                
+                return string.Format("{0:D2}:{1:D2}:{2:D2}", timeToThrust.Hours, timeToThrust.Minutes, timeToThrust.Seconds);
             }
             else
             {
@@ -589,12 +590,12 @@ namespace ImprovedNonAtmosphericLandings
 
         private double CalculateThrust()
         {
-            return 250d;
+            return 180d;
         }
 
         private double CalculateFuelFlow()
         {
-            return 14.56737 * 5 / 1000d;
+            return 3.54684 * 3 * 5 / 1000d;
         }
 
         #endregion
