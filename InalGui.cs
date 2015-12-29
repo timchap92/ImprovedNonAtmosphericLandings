@@ -7,7 +7,6 @@ using UnityEngine;
 
 namespace ImprovedNonAtmosphericLandings
 {
-
     class InalGui : MonoBehaviour
     {
         private Boolean drawWindow = false;

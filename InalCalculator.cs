@@ -26,10 +26,11 @@ namespace ImprovedNonAtmosphericLandings
         private double thrust;
         private double fuelFlow;
         private double t0;
+        double mass;
 
         //Calculation parameters
-        private float targetAltitudeValue = 100;
-        private float altitudeError = 50;
+        private float targetAltitudeValue = 25;
+        private float altitudeError = 25;
         private float targetSpeedValue = 1.5F;
         private float speedError = 1.5F;
 
@@ -71,6 +72,16 @@ namespace ImprovedNonAtmosphericLandings
             return targetSpeedValue - speedError;
         }
 
+        public double GetThrust()
+        {
+            return thrust;
+        }
+
+        public double GetFinalMass()
+        {
+            return mass;
+        }
+
         public void Stop()
         {
 
@@ -78,11 +89,13 @@ namespace ImprovedNonAtmosphericLandings
 
         public void CalculateResult()
         {
+
             //TODO: Conditioning.
             //Must be nonatmospheric
             //Must be descending
             //Must be on suborbital path
             //Must have TWR > 1 at surface
+            //Recommend disabling gimbal
             
             Logger.Info("Beginning calculation.");
 
@@ -91,8 +104,7 @@ namespace ImprovedNonAtmosphericLandings
             vessel = FlightGlobals.ActiveVessel;
             body = vessel.mainBody;
 
-            thrust = CalculateThrust();
-            fuelFlow = CalculateFuelFlow();
+            CalculateThrustAndFuelFlow();
 
             t0 = Planetarium.GetUniversalTime();
             
@@ -171,7 +183,7 @@ namespace ImprovedNonAtmosphericLandings
             initialVelocity[0] = OrbitToWorld(vessel.GetOrbit().getOrbitalVelocityAtUT(t0 + startTimeOfThrust));
             initialPosition[1] = initialPosition[0];
             initialVelocity[1] = initialVelocity[0];
-            double mass = vessel.totalMass; //Known exactly between time steps
+            mass = vessel.totalMass; //Known exactly between time steps
 
             //Resulting quantities
             Vector3d[] finalPosition = new Vector3d[2];
@@ -236,8 +248,8 @@ namespace ImprovedNonAtmosphericLandings
             */
 
             decisionArray[0, 2, 0, 2] = IterationResult.TOO_LATE;
-            decisionArray[0, 2, 0, 1] = IterationResult.STEP_BACK;
-            decisionArray[0, 2, 1, 1] = IterationResult.MORE_ACCURACY;
+            decisionArray[0, 2, 0, 1] = IterationResult.TOO_LATE;
+            decisionArray[0, 2, 1, 1] = IterationResult.TOO_LATE;
             decisionArray[0, 2, 2, 1] = IterationResult.MORE_ACCURACY;
             decisionArray[0, 2, 0, 0] = IterationResult.STEP_BACK;
             decisionArray[0, 2, 1, 0] = IterationResult.MORE_ACCURACY;
@@ -253,12 +265,12 @@ namespace ImprovedNonAtmosphericLandings
             decisionArray[0, 1, 2, 0] = IterationResult.MORE_ACCURACY;
             decisionArray[1, 1, 1, 1] = IterationResult.SUCCESS;
             decisionArray[1, 1, 1, 0] = IterationResult.STEP_BACK;
-            decisionArray[1, 1, 2, 0] = IterationResult.MORE_ACCURACY;
+            decisionArray[1, 1, 2, 0] = IterationResult.TOO_EARLY;
             decisionArray[0, 0, 0, 0] = IterationResult.STEP_BACK;
             decisionArray[0, 0, 1, 0] = IterationResult.STEP_BACK;
             decisionArray[0, 0, 2, 0] = IterationResult.STEP_BACK;
             decisionArray[1, 0, 1, 0] = IterationResult.STEP_BACK;
-            decisionArray[1, 0, 2, 0] = IterationResult.STEP_BACK;
+            decisionArray[1, 0, 2, 0] = IterationResult.TOO_EARLY;
             decisionArray[2, 0, 2, 0] = IterationResult.TOO_EARLY;
 
 
@@ -308,9 +320,6 @@ namespace ImprovedNonAtmosphericLandings
                     finalSrfAltitude[j] = GetSrfAltitude(finalPosition[j], startTimeOfThrust + burnTime);
                 }
                 
-                Logger.Info("Final surface speed estimates are [" + finalSrfSpeed[0].ToString("E2") + ", " + finalSrfSpeed[1].ToString("E2") +
-                    "]. Final surface altitude estimates are [" + finalSrfAltitude[0].ToString("E2") + ", " + finalSrfAltitude[1].ToString("E2") + "].");
-                
                 //TODO: Test that each estimate is lower/higher as expected
                 if (finalSrfSpeed[0] > finalSrfSpeed[1])
                 {
@@ -322,6 +331,9 @@ namespace ImprovedNonAtmosphericLandings
                     Logger.Warn("Surface altitude estimates are reversed");
                     finalSrfAltitude.Reverse();
                 }
+
+                Logger.Info("Final surface speed estimates are [" + finalSrfSpeed[0].ToString("E2") + ", " + finalSrfSpeed[1].ToString("E2") +
+                    "]. Final surface altitude estimates are [" + finalSrfAltitude[0].ToString("E2") + ", " + finalSrfAltitude[1].ToString("E2") + "].");
 
                 //Determine if we have overshot and started rising again
                 for (int j = 0; j < 2; j++)
@@ -335,10 +347,9 @@ namespace ImprovedNonAtmosphericLandings
                 //Figure out what's going on
                 if (finalSrfAltitude[0] < targetAltitude[1] || finalSrfSpeed[0] < targetSpeed[1] || rising.Contains(true)) //A broad test to reduce the processing for ordinary iteration cases
                 {
-                    lowerPoint = new double[] { finalSrfAltitude[1], finalSrfSpeed[0] };
                     upperPoint = new double[] { finalSrfAltitude[0], finalSrfSpeed[1] };
-
-
+                    lowerPoint = new double[] { finalSrfAltitude[1], finalSrfSpeed[0] };
+                    
                     double[][] points = new double[][] { upperPoint, lowerPoint };
                     int[] regions = new int[4]; //This contains the location of the two points in the 3-by-3 space in the form [upper.x, upper.y, lower.x, lower.y]
                     for (int j = 0; j < 2; j++)
@@ -588,9 +599,37 @@ namespace ImprovedNonAtmosphericLandings
 
         #region Dummy thrust and fuel flow values
 
-        private double CalculateThrust()
+        private void CalculateThrustAndFuelFlow()
         {
-            return 180d;
+            Logger.Info("Calculating thrust.");
+
+            List<Part> parts = vessel.GetActiveParts();
+
+            thrust = 0;
+            fuelFlow = 0;
+
+            foreach (Part part in parts)
+            {
+                Logger.Info("Part name is: " + part.name);
+
+                List<ModuleEngines> engineModules = part.Modules.GetModules<ModuleEngines>();
+                
+                foreach (ModuleEngines module in engineModules)
+                {
+                    BaseFieldList fieldList = module.Fields;
+                    bool ignited = (bool) fieldList.GetValue("EngineIgnited");
+                    if (ignited)
+                    {
+                        double thrustLimiter = Convert.ToDouble(fieldList.GetValue("thrustPercentage"));
+                        thrust += module.maxThrust * thrustLimiter / 100f;
+                        fuelFlow += module.maxFuelFlow * thrustLimiter / 100f;
+                    }
+                }
+                
+            }
+
+            Logger.Info("Total thrust is: " + thrust + ", total fuel flow is: " + fuelFlow + ".");
+            
         }
 
         private double CalculateFuelFlow()
