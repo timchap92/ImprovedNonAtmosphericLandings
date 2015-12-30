@@ -29,10 +29,18 @@ namespace ImprovedNonAtmosphericLandings
         double mass;
 
         //Calculation parameters
-        private float targetAltitudeValue = 25;
-        private float altitudeError = 25;
-        private float targetSpeedValue = 1.5F;
+        private float targetAltitudeValue = 100;
+        private float altitudeError = 50;
+        private float targetSpeedValue = 3.5F;
         private float speedError = 1.5F;
+
+        //Return stuff
+        private Vector3d initialRetrograde;
+
+        public Vector3d GetInitialRetrograde()
+        {
+            return initialRetrograde;
+        }
 
         public String GetStatus()
         {
@@ -168,6 +176,7 @@ namespace ImprovedNonAtmosphericLandings
             } while (iterationResult != IterationResult.SUCCESS);
 
             Logger.Info("Calculation successful. Thrust should start at UT " + (t0 + startTimeOfThrust));
+
             resultUT = (t0 + startTimeOfThrust);
             success = true;
         }
@@ -183,6 +192,7 @@ namespace ImprovedNonAtmosphericLandings
             initialVelocity[0] = OrbitToWorld(vessel.GetOrbit().getOrbitalVelocityAtUT(t0 + startTimeOfThrust));
             initialPosition[1] = initialPosition[0];
             initialVelocity[1] = initialVelocity[0];
+            initialRetrograde = -initialVelocity[0];
             mass = vessel.totalMass; //Known exactly between time steps
 
             //Resulting quantities
@@ -286,23 +296,23 @@ namespace ImprovedNonAtmosphericLandings
             {
                 Logger.Info("Calculating step. Timestep is " + timeStep + ". Total burn time before this step is " + burnTime);
 
-                Vector3d[] initialPositionCopy = initialPosition;
-                Vector3d[] initialVelocityCopy = initialVelocity;
-
                 //First generate an estimate using the initial values of the integration step
-                finalPosition[0] = initialPosition[0] + initialVelocity[0] * timeStep; //This line is altering initialPosition somehow MUST GET TO THE BOTTOM OF THIS
+                var debug = initialPosition[0];
+                finalPosition[0] = (Vector3d) initialPosition.GetValue(0) + (Vector3d) initialVelocity.GetValue(0) * timeStep; //This line is altering initialPosition somehow MUST GET TO THE BOTTOM OF THIS
                 gravAcc = FlightGlobals.getGeeForceAtPosition(initialPosition[0]);
                 thrustAcc = thrust / mass * -GetSrfVelocity(initialPosition[0], initialVelocity[0]).normalized;
-                finalVelocity[0] = initialVelocity[0] + (gravAcc + thrustAcc) * timeStep;
+                finalVelocity[0] = (Vector3d) initialVelocity[0] + (gravAcc + thrustAcc) * timeStep;
+
+                if (debug != initialPosition[0])
+                {
+                    Logger.Info("InitialPosition changed!");
+                }
 
                 //Then generate an estimate using the final values of the integration step
                 gravAcc = FlightGlobals.getGeeForceAtPosition(finalPosition[0]); //Assume this is close enough
                 thrustAcc = thrust / (mass - fuelFlow * timeStep) * -GetSrfVelocity(finalPosition[0], finalVelocity[0]).normalized;
                 finalVelocity[1] = initialVelocity[1] + (gravAcc + thrustAcc) * timeStep;
                 finalPosition[1] = initialPosition[1] + finalVelocity[1] * timeStep;
-
-                initialPosition = initialPositionCopy;
-                initialVelocity = initialVelocityCopy;
                 
                 Logger.Info("Final position is " + finalPosition[0].ToString());
 
