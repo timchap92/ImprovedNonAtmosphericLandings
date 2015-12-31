@@ -17,14 +17,14 @@ namespace ImprovedNonAtmosphericLandings
         private double finalMass;
         private AutopilotState state;
         private Vessel vessel;
-        public bool isActive = false;
+        private bool isActive = false;
         private double previousTime = 0;
         private double updateTime;
         private CelestialBody body;
         private WarpWatcher warpWatcher;
         float kp = 1F;
-        float ki = 1F;
-        float kd = 1.5F;
+        float ki = 0.75F;
+        float kd = 1.75F;
         Vector3 integrator = Vector3.zero;
         Vector3d error = Vector3d.zero;
         Vector3d retrograde;
@@ -49,13 +49,15 @@ namespace ImprovedNonAtmosphericLandings
             thrust = inalCalculator.GetThrust();
             retrograde = inalCalculator.GetInitialRetrograde();
             vessel = FlightGlobals.ActiveVessel;
+            state = AutopilotState.ROTATING;
+            body = vessel.mainBody;
 
             //Register autopilot
             vessel.OnFlyByWire += new FlightInputCallback(fly);
             isActive = true;
 
-            state = AutopilotState.ROTATING;
-            body = vessel.mainBody;
+            //Set time warp to 1
+            TimeWarp.SetRate(0, true);
         }
 
         public enum AutopilotState
@@ -79,19 +81,12 @@ namespace ImprovedNonAtmosphericLandings
             else if (state == AutopilotState.FREEFALL)
             {
                 double currentTime = Planetarium.GetUniversalTime();
-                if (stableCount < 3) //Ensures that 3 frames pass at 1x warp before we check the update time
-                {
-                    //Set update time to zero, otherwise engines will fire up too early due to large expected updateTime.
-                    stableCount++;
-                    updateTime = 0;
-                }
-                else
-                {
-                    PIDHeading(retrograde, s);
-                    updateTime = currentTime - previousTime;
-                }
+
+                PIDHeading(retrograde, s);
+                updateTime = currentTime - previousTime;
+
                 previousTime = currentTime;
-                if (currentTime + 2 * updateTime >= startUT)
+                if (warpWatcher.IsTimeWarpStable() && currentTime + 2 * updateTime >= startUT)
                 {
                     Logger.Info("Initiating burn at UT " + currentTime);
                     s.mainThrottle = 1.0F;
@@ -162,6 +157,11 @@ namespace ImprovedNonAtmosphericLandings
                 isActive = false;
                 previousTime = 0;
             }
+        }
+
+        public bool IsActive()
+        {
+            return isActive;
         }
 
         public bool PIDHeading(Vector3d heading, FlightCtrlState s)

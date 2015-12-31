@@ -54,7 +54,8 @@
   <ItemGroup>
     <Compile Include="InalAutopilot.cs" />
     <Compile Include="InalCalculator.cs" />
-    <Compile Include="InalGui.cs" />
+    <Compile Include="MainGUI.cs" />
+    <Compile Include="OptionsGUI.cs" />
     <Compile Include="Resources.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="InalLauncher.cs" />

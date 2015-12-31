@@ -11,8 +11,11 @@ namespace ImprovedNonAtmosphericLandings
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class InalLauncher : MonoBehaviour
     {
+        private InalAutopilot autopilot;
+        private InalCalculator calculator;
+        private OptionsGUI optionsWindow;
         private ApplicationLauncherButton button = null;
-        private InalGui gui;
+        private MainGUI gui;
 
         //Called when FLIGHT scene begins
         protected void Awake()
@@ -57,20 +60,33 @@ namespace ImprovedNonAtmosphericLandings
             Texture iconTexture = GameDatabase.Instance.GetTexture(Resources.iconPath, false);
             //Add application
             button = ApplicationLauncher.Instance.AddModApplication(OnButtonClick, OnButtonUnclick, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT, iconTexture);
-            gui = button.gameObject.AddComponent<InalGui>();
+            gui = button.gameObject.AddComponent<MainGUI>();
             Logger.Info("Added application.");
         }
         
         private void OnButtonClick()
         {
+            if (calculator == null)
+            {
+                calculator = gameObject.AddComponent<InalCalculator>();
+            }
+            if (autopilot == null)
+            {
+                autopilot = gameObject.AddComponent<InalAutopilot>();
+            }
+            if (optionsWindow == null)
+            {
+                optionsWindow = gameObject.AddComponent<OptionsGUI>();
+            }
+
             //Open gui window
-            gui.openWindow();
+            gui.open();
         }
 
         private void OnButtonUnclick()
         {
             //Close gui window
-            gui.closeWindow();
+            gui.close();
         }
 
         private void OnGUI()

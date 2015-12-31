@@ -10,5 +10,6 @@ namespace ImprovedNonAtmosphericLandings
     {
         public static readonly String iconPath = "ImprovedNonAtmosphericLandings/Textures/icon";
         public static readonly String modName = "Improved Non-Atmopheric Landings";
+        public static readonly String optionsTitle = "Settings";
     }
 }
