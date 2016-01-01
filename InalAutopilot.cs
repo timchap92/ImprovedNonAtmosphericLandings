@@ -22,9 +22,9 @@ namespace ImprovedNonAtmosphericLandings
         private double updateTime;
         private CelestialBody body;
         private WarpWatcher warpWatcher;
-        float kp = 1F;
-        float ki = 0.75F;
-        float kd = 1.75F;
+        float kp = 0.4F;
+        float ki = 0.0F;
+        float kd = 1F;
         Vector3 integrator = Vector3.zero;
         Vector3d error = Vector3d.zero;
         Vector3d retrograde;
@@ -32,13 +32,37 @@ namespace ImprovedNonAtmosphericLandings
         double gravAcc;
         int stableCount;
 
-        float vesselHeight = 5;
-        float safetyMargin = 2;
-        
+        double vesselHeight;
+        float safetyMargin = 5;
+
+        #region Public getters & setters
+
         public AutopilotState GetState()
         {
             return state;
         }
+
+        public float GetKp()
+        {
+            return kp;
+        }
+
+        public float GetKd()
+        {
+            return kd;
+        }
+
+        public void SetKd(float value)
+        {
+            kd = value;
+        }
+
+        public void SetKp(float value)
+        {
+            kp = value;
+        }
+
+        #endregion
 
         public void Activate(InalCalculator inalCalculator)
         {
@@ -51,7 +75,8 @@ namespace ImprovedNonAtmosphericLandings
             vessel = FlightGlobals.ActiveVessel;
             state = AutopilotState.ROTATING;
             body = vessel.mainBody;
-
+            vesselHeight = inalCalculator.GetVesselHeight();
+            
             //Register autopilot
             vessel.OnFlyByWire += new FlightInputCallback(fly);
             isActive = true;
@@ -74,7 +99,6 @@ namespace ImprovedNonAtmosphericLandings
                 {
                     warpWatcher = GameObject.FindObjectOfType<WarpWatcher>();
                     warpWatcher.Activate(startUT);
-                    stableCount = 0;
                     state = AutopilotState.FREEFALL;
                 }
             }
@@ -82,7 +106,7 @@ namespace ImprovedNonAtmosphericLandings
             {
                 double currentTime = Planetarium.GetUniversalTime();
 
-                PIDHeading(retrograde, s);
+                PIDHeading(-vessel.srf_velocity, s);
                 updateTime = currentTime - previousTime;
 
                 previousTime = currentTime;
@@ -104,6 +128,23 @@ namespace ImprovedNonAtmosphericLandings
                     s.mainThrottle = 0.0F;
                     state = AutopilotState.FINAL_DESCENT_FREEFALL;
 
+                    //Need to calculate the difference between the ship altitude and the altitude of the bottom part - from stupid_chris on the KSP forums
+                    double altitude = FlightGlobals.ship_altitude - vessel.terrainAltitude;
+                    float bottomAlt = (float) altitude;
+                    foreach (Part part in vessel.parts)
+                    {
+                        if (part.collider != null) //Makes sure the part actually has a collider to touch ground
+                        {
+                            Vector3 bottom = part.collider.ClosestPointOnBounds(vessel.mainBody.position); //Gets the bottom point
+                            float partAlt = FlightGlobals.getAltitudeAtPos(bottom) - (float) vessel.terrainAltitude;  //Gets the looped part alt
+                            bottomAlt = Mathf.Max(0, Mathf.Min(bottomAlt, partAlt));  //Stores the smallest value in all the parts
+                        }
+                    }
+
+                    vesselHeight = altitude - bottomAlt;
+
+                    Logger.Info("Vessel height is " + vesselHeight);
+
                     //Final descent assumes constant mass, constant upwards vector and constant gravitational acceleration.
                     finalMass = vessel.totalMass;
                     upwards = vessel.GetWorldPos3D() - vessel.mainBody.position;
@@ -112,13 +153,13 @@ namespace ImprovedNonAtmosphericLandings
             }
             else if (state == AutopilotState.FINAL_DESCENT_FREEFALL)
             {
-                PIDHeading(upwards, s);
+                PIDHeading(-vessel.srf_velocity, s);
                 s.mainThrottle = 0.0F;
-                double altitude = FlightGlobals.ship_altitude - FlightGlobals.ActiveVessel.terrainAltitude;
+                double altitude = FlightGlobals.ship_altitude - vessel.terrainAltitude;
                 
                 if (altitude - vesselHeight - safetyMargin <  (Math.Pow(vessel.srfSpeed, 2) - Math.Pow(maxSpeed, 2)) / (2 * (thrust / finalMass - gravAcc)))
                 {
-                    Logger.Info("Final burn. Altitude is " + altitude + ", surface speed is " + vessel.srfSpeed + ", max allowed landing speed is " + maxSpeed + ", gravAcc is " + gravAcc + ", thrust is " + thrust + ", mass is " + finalMass);
+                    Logger.Info("Final burn. Altitude is " + altitude + ", vessel height is " + vesselHeight + ", surface speed is " + vessel.srfSpeed + ", max allowed landing speed is " + maxSpeed + ", gravAcc is " + gravAcc + ", thrust is " + thrust + ", mass is " + finalMass);
                     s.mainThrottle = 1.0F;
                     state = AutopilotState.FINAL_DESCENT_THRUST;
                 }
@@ -137,7 +178,17 @@ namespace ImprovedNonAtmosphericLandings
                 }
                 else if (vessel.srfSpeed > maxSpeed)
                 {
-                    s.mainThrottle = 1.0F;
+                    double retrogradeAngle = Vector3d.Angle(-vessel.srf_velocity, vessel.upAxis);
+                    Logger.Info("Retrograde angle is: " + retrogradeAngle);
+                    if (retrogradeAngle < 45)
+                    {
+                        s.mainThrottle = 1.0F;
+                    }
+                    else
+                    {
+                        Logger.Info("Vessel is not oriented close enough to retrograde!");
+                        s.mainThrottle = 0.0F;
+                    }
                 }
                 if (vessel.Landed)
                 {
@@ -164,22 +215,30 @@ namespace ImprovedNonAtmosphericLandings
             return isActive;
         }
 
+        /// <summary>
+        /// Modifies the passed FlightCtrlState to aim towards the passed heading vector
+        /// </summary>
+        /// <param name="heading"></param>
+        /// <param name="s"></param>
+        /// <returns>True if the heading is sufficiently close to the target heading</returns>
         public bool PIDHeading(Vector3d heading, FlightCtrlState s)
         {
             Vector3d previousError = error;
             //Move to initial retrograde position
             error = (Vector3d)vessel.transform.InverseTransformDirection((Vector3)heading.normalized);
-            error.y = 0;
+            Logger.Info("Rotation is " + vessel.angularVelocity);
+            
             integrator = 0.9F * integrator + 0.1F * error;
             float yaw_command = Mathf.Clamp(kp * (float)error.x + kd * (float)(error - previousError).x / Time.deltaTime + ki * integrator.x, -1.0F, 1.0F);
             float pitch_command = Mathf.Clamp(-kp * (float)error.z - kd * (float)(error - previousError).z / Time.deltaTime - ki * integrator.z, -1.0F, 1.0F);
 
-            s.yaw = yaw_command;
-            s.pitch = pitch_command;
-
+            s.yaw += yaw_command;
+            s.pitch += pitch_command;
+            
+            error.y = 0;
             Logger.Info("Sqr magnitude error is : " + Vector3d.SqrMagnitude(error) + ". SqrMagnitude difference is " + Vector3d.SqrMagnitude(error - previousError) / Time.deltaTime);
 
-            return (Vector3d.SqrMagnitude(error) < 1E-3F && Vector3d.SqrMagnitude(error - previousError) < 1E-6F);
+            return (Vector3d.SqrMagnitude(error) < 1E-3F && Vector3d.SqrMagnitude(error - previousError) < 1E-7F);
         }
 
     }
