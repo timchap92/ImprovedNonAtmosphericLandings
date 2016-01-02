@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using System.Reflection;
 
 namespace ImprovedNonAtmosphericLandings
 {
@@ -15,18 +16,46 @@ namespace ImprovedNonAtmosphericLandings
         private OptionsGUI optionsWindow;
         private ScreenMessage screenMessage;
         private bool paused = false;
+        private string failReason;
 
         private InalCalculator inalCalculator;
         private InalAutopilot autopilot;
 
-        private void Awake()
-        {
+        private GUI.WindowFunction currentWindow;
 
+        /// <summary>
+        /// Privately settable window property. Ensures that the height of the window is reset when the window changes
+        /// </summary>
+        public GUI.WindowFunction CurrentWindow
+        {
+            set
+            {
+                mainWindowPosition.height = 0;
+                currentWindow = value;
+            }
+        }
+
+        public void SetCalculationSuccessful()
+        {
+            CurrentWindow = CalculationSuccessful;
+        }
+
+        public void SetFatalError(string s)
+        {
+            failReason = s;
+            CurrentWindow = FatalError;
+        }
+
+        public void SetIdle()
+        {
+            CurrentWindow = Idle;
         }
 
         public void Start()
         {
             windowStyle = new GUIStyle(HighLogic.Skin.window);
+
+            currentWindow = Idle;
         }
 
         public void open()
@@ -81,117 +110,195 @@ namespace ImprovedNonAtmosphericLandings
             {
                 //Render GUI
                 
-                mainWindowPosition = GUILayout.Window(this.GetInstanceID(), mainWindowPosition, MainWindow, Resources.modName);
+                mainWindowPosition = GUILayout.Window(this.GetInstanceID(), mainWindowPosition, GetWindow(), Resources.modName);
             }
         }
 
-        private void MainWindow(int windowID)
+        private GUI.WindowFunction GetWindow()
+        {
+            return currentWindow;
+        }
+
+        private void Idle(int windowID)
+        {
+            BeginWindow();
+
+            DrawSettingsButton();
+            DrawCalculateDescentButton();
+
+            EndWindow();
+        }
+
+        private void Calculating(int windowID)
+        {
+            BeginWindow();
+
+            DrawAbortCalculationButton();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.BeginVertical();
+            GUILayout.Label("Trajectory number: ");
+            GUILayout.Label("Time step:");
+            GUILayout.Label("Burn time: ");
+            GUILayout.Space(10.0F);
+            GUILayout.Label("Final stop height (m): ");
+            GUILayout.EndVertical();
+            GUILayout.BeginVertical();
+            GUILayout.TextArea(inalCalculator.GetTrajectory().ToString());
+            GUILayout.TextArea(inalCalculator.GetTimeStep().ToString("N4"));
+            GUILayout.TextArea(inalCalculator.GetBurnTime());
+            GUILayout.Space(10.0F);
+            GUILayout.TextArea(inalCalculator.GetAltitudeOffer());
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+
+            DrawAcceptButton();
+
+            EndWindow();
+        }
+
+        private void CalculationSuccessful(int windowID)
+        {
+            if(Planetarium.GetUniversalTime() > inalCalculator.GetResultUT())
+            {
+                CurrentWindow = Idle;
+                return;
+            }
+
+            BeginWindow();
+
+            DrawSettingsButton();
+            DrawCalculateDescentButton();
+
+            GUILayout.Space(10.0f);
+            DrawTMinus();
+            DrawActivateAutopilotButton();
+
+            EndWindow();
+        }
+
+        private void FatalError(int windowID)
+        {
+            BeginWindow();
+
+            GUILayout.Label("Error:");
+            GUILayout.TextArea(failReason);
+
+            if (GUILayout.Button("OK"))
+            {
+                CurrentWindow = Idle;
+            }
+
+            EndWindow();
+        }
+
+        private void Autopilot(int windowID)
+        {
+            BeginWindow();
+
+            DrawSettingsButton();
+
+            GUILayout.Space(10.0f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.BeginVertical();
+            GUILayout.Label("State: ");
+            GUILayout.Label("T Minus: ");
+            GUILayout.Label("ETA (approx): ");
+            GUILayout.EndVertical();
+
+            GUILayout.BeginVertical();
+            GUILayout.TextArea(autopilot.GetState().ToString());
+            GUILayout.TextArea(inalCalculator.GetTMinus());
+            GUILayout.TextArea(inalCalculator.GetETA());
+            GUILayout.EndHorizontal();
+            GUILayout.EndHorizontal();
+
+            if (GUILayout.Button("Deactivate Autopilot"))
+            {
+                autopilot.Deactivate();
+                CurrentWindow = CalculationSuccessful;
+            }
+
+            EndWindow();
+        }
+
+        #region Window, button and field helpers
+
+
+        private void BeginWindow()
         {
             GUILayout.BeginVertical();
             GUILayout.Space(5.0f);
+        }
 
-            if (!autopilot.IsActive())
-            {
-                if (!inalCalculator.IsCalculating())
-                {
-                    if (GUILayout.Button("Calculate descent"))
-                    {
-                        Pause();
-                        screenMessage = ScreenMessages.PostScreenMessage("Pausing for calculation");
-
-
-                        //Logger.Info("OLD CALCULATOR START");
-                        //OldCalculator oldCalculator = new OldCalculator();
-                        //oldCalculator.CalculateResult();
-                        //Logger.Info("NEW CALCULATOR START");
-
-                        inalCalculator.BeginCalculation();
-                        mainWindowPosition.height = 0;
-                    }
-
-                    if(GUILayout.Button("Settings"))
-                    {
-                        optionsWindow.toggle();
-                    }
-                }
-                else
-                {
-                    optionsWindow.close();
-                    if (GUILayout.Button("Abort calculation"))
-                    {
-                        inalCalculator.Disable();
-                        UnPause();
-                        mainWindowPosition.height = 0;
-                    }
-                    GUILayout.BeginHorizontal();
-                    GUILayout.BeginVertical();
-                    GUILayout.Label("Trajectory number: ");
-                    GUILayout.Label("Time step:");
-                    GUILayout.Label("Burn time: ");
-                    GUILayout.Space(10.0F);
-                    GUILayout.Label("Altitude offer (m): ");
-                    GUILayout.EndVertical();
-                    GUILayout.BeginVertical();
-                    GUILayout.TextArea(inalCalculator.GetTrajectory().ToString());
-                    GUILayout.TextArea(inalCalculator.GetTimeStep().ToString("N4"));
-                    GUILayout.TextArea(inalCalculator.GetBurnTime());
-                    GUILayout.Space(10.0F);
-                    GUILayout.TextArea(inalCalculator.GetAltitudeOffer());
-                    GUILayout.EndVertical();
-                    GUILayout.EndHorizontal();
-                    if (GUILayout.Button("Accept"))
-                    {
-                        inalCalculator.AcceptOffer();
-                        mainWindowPosition.height = 0;
-                    }
-                }
-
-                if (inalCalculator.IsComplete())
-                {
-                    UnPause();
-
-                    if (GUILayout.Button("Activate Autopilot"))
-                    {
-                        Logger.Info("Activating autopilot.");
-                        optionsWindow.close();
-                        
-                        autopilot.Activate(inalCalculator);
-                        mainWindowPosition.height = 0;
-                    }
-
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label("T Minus: ");
-                    GUILayout.TextArea(inalCalculator.GetTMinus());
-                    GUILayout.EndHorizontal();
-                }
-            }
-            else
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.BeginVertical();
-                GUILayout.Label("State: ");
-                GUILayout.Label("T Minus: ");
-                GUILayout.Label("ETA (approx): ");
-                GUILayout.EndVertical();
-
-                GUILayout.BeginVertical();
-                GUILayout.TextArea(autopilot.GetState().ToString());
-                GUILayout.TextArea(inalCalculator.GetTMinus());
-                GUILayout.TextArea(inalCalculator.GetETA());
-                GUILayout.EndHorizontal();
-                GUILayout.EndHorizontal();
-                if (GUILayout.Button("Deactivate Autopilot"))
-                {
-                    autopilot.Deactivate();
-                    mainWindowPosition.height = 0;
-                }
-                
-            }
-
-            GUILayout.Space(5.0f);
+        private void EndWindow()
+        {
             GUILayout.EndVertical();
+            GUILayout.Space(5.0f);
             GUI.DragWindow();
         }
+
+        private void DrawSettingsButton()
+        {
+            if (GUILayout.Button("Settings"))
+            {
+                optionsWindow.toggle();
+            }
+        }
+
+        private void DrawCalculateDescentButton()
+        {
+            if (GUILayout.Button("Calculate descent"))
+            {
+                Pause();
+                screenMessage = ScreenMessages.PostScreenMessage("Pausing for calculation");
+
+                CurrentWindow = Calculating;
+                inalCalculator.BeginCalculation();
+
+                optionsWindow.close();
+            }
+        }
+
+        private void DrawActivateAutopilotButton()
+        {
+            if (GUILayout.Button("Activate Autopilot"))
+            {
+                Logger.Info("Activating autopilot.");
+
+                autopilot.Activate(inalCalculator);
+
+                CurrentWindow = Autopilot;
+            }
+        }
+
+        private void DrawAbortCalculationButton()
+        {
+            if (GUILayout.Button("Abort calculation"))
+            {
+                inalCalculator.Disable();
+                CurrentWindow = Idle;
+            }
+        }
+
+        private void DrawAcceptButton()
+        {
+            if (GUILayout.Button("Accept"))
+            {
+                inalCalculator.AcceptOffer();
+            }
+        }
+
+        private void DrawTMinus()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("T Minus: ");
+            GUILayout.TextArea(inalCalculator.GetTMinus());
+            GUILayout.EndHorizontal();
+        }
+
+        #endregion
 
         private void Pause()
         {
@@ -209,7 +316,7 @@ namespace ImprovedNonAtmosphericLandings
             }
         }
 
-        private void UnPause()
+        public void UnPause()
         {
             if (paused == true)
             {
