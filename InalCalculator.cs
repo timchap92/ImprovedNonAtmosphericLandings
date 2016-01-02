@@ -48,9 +48,9 @@ namespace ImprovedNonAtmosphericLandings
 
         //Calculation parameters
         private int calcsPerUpdate = 2;
-        private float targetAltitudeValue = 50;
-        private float altitudeError = 25;
-        private float targetSpeedValue = 5F;
+        private float targetAltitudeValue = 25;
+        private float altitudeError = 15;
+        private float targetSpeedValue = 2F;
         private float speedError = 2F;
 
         //Return stuff
@@ -349,20 +349,23 @@ namespace ImprovedNonAtmosphericLandings
             if (previousResult == IterationResult.MORE_ACCURACY)
             {
                 Logger.Info("Increasing accuracy from " + integrationSteps + "integration steps.");
+
                 integrationSteps = integrationSteps * 2;
             }
             else if (previousResult == IterationResult.TOO_EARLY)
             {
                 Logger.Info("Starting thrust at " + startTimeOfThrust + " was too early. Trying later.");
                 shortTime = startTimeOfThrust;
+                startTimeOfThrust = (shortTime + longTime) / 2;
             }
             else if (previousResult == IterationResult.TOO_LATE)
             {
                 Logger.Info("Starting thrust at " + startTimeOfThrust + " was too late. Trying earlier.");
                 longTime = startTimeOfThrust;
+                startTimeOfThrust = (shortTime + longTime) / 2;
             }
 
-            startTimeOfThrust = (shortTime + longTime) / 2;
+            
 
             Logger.Info("Computing approximation " + trajectoryCount + " with " + integrationSteps + " integration steps. Start time of thrust is " + startTimeOfThrust);
             
@@ -524,7 +527,7 @@ namespace ImprovedNonAtmosphericLandings
                     if (iterationResult == IterationResult.STEP_BACK)
                     {
                         stepBackCounter++;
-                        if (stepBackCounter > 10)
+                        if (stepBackCounter > 5)
                         {
                             Logger.Info("Too many step-backs, detected oscillation. Requesting more accuracy.");
                             return IterationResult.MORE_ACCURACY;
