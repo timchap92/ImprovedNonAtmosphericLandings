@@ -69,7 +69,7 @@ namespace ImprovedNonAtmosphericLandings
             //Initialise autopilot parameters
             startUT = inalCalculator.GetResultUT();
             maxSpeed = inalCalculator.GetMaxSpeed();
-            minSpeed = inalCalculator.GetMinSpeed();
+            minSpeed = maxSpeed / 2;
             thrust = inalCalculator.GetThrust();
             retrograde = inalCalculator.GetInitialRetrograde();
             vessel = FlightGlobals.ActiveVessel;
@@ -91,6 +91,7 @@ namespace ImprovedNonAtmosphericLandings
         }
 
 
+        //TODO: Turn this into multiple fly methods
         public void fly(FlightCtrlState s)
         {
             if (state == AutopilotState.ROTATING)
@@ -157,7 +158,7 @@ namespace ImprovedNonAtmosphericLandings
                 s.mainThrottle = 0.0F;
                 double altitude = FlightGlobals.ship_altitude - vessel.terrainAltitude;
                 
-                if (altitude - vesselHeight - safetyMargin <  (Math.Pow(vessel.srfSpeed, 2) - Math.Pow(maxSpeed, 2)) / (2 * (thrust / finalMass - gravAcc)))
+                if (altitude - vesselHeight - safetyMargin <  (Math.Pow(vessel.srfSpeed, 2) - Math.Pow(minSpeed, 2)) / (2 * (thrust / finalMass - gravAcc)))
                 {
                     Logger.Info("Final burn. Altitude is " + altitude + ", vessel height is " + vesselHeight + ", surface speed is " + vessel.srfSpeed + ", max allowed landing speed is " + maxSpeed + ", gravAcc is " + gravAcc + ", thrust is " + thrust + ", mass is " + finalMass);
                     s.mainThrottle = 1.0F;
@@ -167,16 +168,16 @@ namespace ImprovedNonAtmosphericLandings
             else if (state == AutopilotState.FINAL_DESCENT_THRUST)
             {
                 PIDHeading(-vessel.srf_velocity, s);
-                if (vessel.srfSpeed < 0.75 * maxSpeed)
+                if (vessel.srfSpeed < 0.75 * minSpeed)
                 {
                     s.mainThrottle = (float) (gravAcc * vessel.totalMass / thrust);
 
-                    if (vessel.srfSpeed < maxSpeed / 2)
+                    if (vessel.srfSpeed < minSpeed / 2)
                     {
                         s.mainThrottle = 0.0F;
                     }
                 }
-                else if (vessel.srfSpeed > maxSpeed)
+                else if (vessel.srfSpeed > minSpeed)
                 {
                     double retrogradeAngle = Vector3d.Angle(-vessel.srf_velocity, vessel.upAxis);
                     Logger.Info("Retrograde angle is: " + retrogradeAngle);
