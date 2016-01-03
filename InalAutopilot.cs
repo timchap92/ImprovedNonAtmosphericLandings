@@ -22,20 +22,27 @@ namespace ImprovedNonAtmosphericLandings
         private double updateTime;
         private CelestialBody body;
         private WarpWatcher warpWatcher;
-        float kp = 0.4F;
+        float kp = 10F;
         float ki = 0.0F;
-        float kd = 1F;
+        float kd = 30F;
         Vector3 integrator = Vector3.zero;
         Vector3d error = Vector3d.zero;
         Vector3d retrograde;
         Vector3d upwards;
         double gravAcc;
         int stableCount;
+        private bool pidEnabled = true;
 
         double vesselHeight;
         float safetyMargin = 5;
 
         #region Public getters & setters
+
+        public bool PIDEnabled
+        {
+            get { return pidEnabled; }
+            set { pidEnabled = value; }
+        }
 
         public AutopilotState GetState()
         {
@@ -101,6 +108,12 @@ namespace ImprovedNonAtmosphericLandings
                     warpWatcher.Activate(startUT);
                     state = AutopilotState.FREEFALL;
                 }
+                else if (Planetarium.GetUniversalTime() > startUT)
+                {
+                    GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.CouldNotReachRetrograde);
+                    vessel.OnFlyByWire -= new FlightInputCallback(fly);
+                    isActive = false;
+                }
             }
             else if (state == AutopilotState.FREEFALL)
             {
@@ -122,7 +135,7 @@ namespace ImprovedNonAtmosphericLandings
                 PIDHeading(-vessel.srf_velocity, s);
                 s.mainThrottle = 1.0F;
 
-                if (vessel.srfSpeed < maxSpeed)
+                if (vessel.srfSpeed < maxSpeed || vessel.verticalSpeed > 0)
                 {
                     Logger.Info("Final descent.");
                     s.mainThrottle = 0.0F;
@@ -196,6 +209,9 @@ namespace ImprovedNonAtmosphericLandings
                     state = AutopilotState.LANDED;
                     vessel.OnFlyByWire -= new FlightInputCallback(fly);
                     isActive = false;
+
+                    GameObject.FindObjectOfType<MainGUI>().SetIdle();
+
                 }
             }
         }
@@ -241,5 +257,9 @@ namespace ImprovedNonAtmosphericLandings
             return (Vector3d.SqrMagnitude(error) < 1E-3F && Vector3d.SqrMagnitude(error - previousError) < 1E-7F);
         }
 
+        class Messages
+        {
+            public static readonly string CouldNotReachRetrograde = "Could not reach retrograde in the required amount of time. Disabling autopilot.";
+        }
     }
 }

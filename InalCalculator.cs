@@ -56,14 +56,15 @@ namespace ImprovedNonAtmosphericLandings
         //Return stuff
         private Vector3d initialRetrograde;
         private double etaUT;
-        public bool calculating = false;
         private double resultUT;
         private String tMinus = string.Empty;
         private String status = string.Empty;
-        private bool success = false;
         private string altitudeOffer = String.Empty;
         private string speedOffer = String.Empty;
         private double maxBurnTime;
+
+        //Readonly constants
+        private readonly double minimumTimeStep = 0.02d;
 
         #region Public getters
 
@@ -112,16 +113,6 @@ namespace ImprovedNonAtmosphericLandings
         public double GetResultUT()
         {
             return resultUT;
-        }
-
-        public bool IsCalculating()
-        {
-            return calculating;
-        }
-
-        public bool IsComplete()
-        {
-            return success;
         }
 
         public double GetMaxSpeed()
@@ -192,65 +183,54 @@ namespace ImprovedNonAtmosphericLandings
 
             calculationCount = 0;
             
-            while (true)
+            while (calculationCount < calcsPerUpdate)
             {
                 IterationResult result = DoNextIntegrationSteps();
 
                 Logger.Info("Iteration result was " + result);
 
-                if (calculationCount >= calcsPerUpdate)
+                if (result == IterationResult.SUCCESS)
                 {
-                    if (result != IterationResult.INCOMPLETE)
-                    {
-                        Logger.Info("Warning! Calcs per update was exceeded and the result is not INCOMPLETE.");
-                    }
-                    Logger.Info("Exceeded maximum calculation count. Taking a break...");
-                    break;
-                }
-                else if (result == IterationResult.SUCCESS)
-                {
-                    //check that we have enough fuel - if not, maybe just notify the user since we may be slightly off
-
-                    //set success to true, kill this update
-                    resultUT = (t0 + startTimeOfThrust);
-                    etaUT = resultUT + burnTime;
-                    success = true;
+                    //TODO: check that we have enough fuel - if not, maybe just notify the user since we may be slightly off
 
                     Logger.Info("Calculation was successful. Thrust should begin " + startTimeOfThrust + " from now.");
 
+                    //Set results
+                    resultUT = (t0 + startTimeOfThrust);
+                    etaUT = resultUT + burnTime;
+
+                    //Notify the GUI of success
+                    GameObject.FindObjectOfType<MainGUI>().SetCalculationSuccessful();
+
+                    //Kill this update
                     Disable();
                     break;
-                }
-                else if (result == IterationResult.TOO_EARLY)
-                {
-                    //remember this result in case we need to come back to it
-                    altitudeOffer = "[" + finalSrfAltitude.lower.ToString("G5") + ", " + finalSrfAltitude.upper.ToString("G5") + "]";
-                    speedOffer = "[" + finalSrfSpeed.lower.ToString("G5") + ", " + finalSrfSpeed.upper.ToString("G5") + "]";
-                    offerUT = t0 + startTimeOfThrust;
-                    maxBurnTime = Mathf.Max((float) burnTime, (float) maxBurnTime);
-                    offerBurnTime = burnTime;
-
-                    DoNextTrajectory(result);
                 }
                 else if (result == IterationResult.TOO_LATE && startTimeOfThrust == 0)
                 {
-                    //notify the user that it is too late to begin retrograde thrusting
+                    //TODO: notify the user that it is too late to begin retrograde thrusting
+                    GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.TooLateToStartThrusting);
                     Disable();
                     break;
                 }
-                else if (result == IterationResult.REACHED_MAX_PRECISION)
+                else if (result == IterationResult.TOO_LATE || result == IterationResult.TOO_EARLY || result == IterationResult.MORE_ACCURACY)
                 {
-                    //notify the user that they must reduce the landing precision
-                    Disable();
-                    break;
-                }
-                else if (result == IterationResult.TOO_LATE || result == IterationResult.MORE_ACCURACY)
-                {
+                    if (result == IterationResult.TOO_EARLY)
+                    {
+                        //Remember this result in case we need to come back to it
+                        altitudeOffer = "[" + finalSrfAltitude.lower.ToString("G5") + ", " + finalSrfAltitude.upper.ToString("G5") + "]";
+                        speedOffer = "[" + finalSrfSpeed.lower.ToString("G5") + ", " + finalSrfSpeed.upper.ToString("G5") + "]";
+                        offerUT = t0 + startTimeOfThrust;
+                        maxBurnTime = Mathf.Max((float)burnTime, (float)maxBurnTime);
+                        offerBurnTime = burnTime;
+                    }
+
                     DoNextTrajectory(result);
                 }
                 else if (result == IterationResult.OUT_OF_FUEL)
                 {
-                    //Warn the user that they don't have enough fuel
+                    //TODO: Warn the user that they don't have enough fuel
+                    GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.InsufficientFuel);
                     Disable();
                     break;
                 }
@@ -266,18 +246,16 @@ namespace ImprovedNonAtmosphericLandings
 
         public void AcceptOffer()
         {
-            calculating = false;
-            this.enabled = false;
-            success = true;
-
+            Disable();
+            GameObject.FindObjectOfType<MainGUI>().SetCalculationSuccessful();
             resultUT = offerUT;
             etaUT = resultUT + offerBurnTime;
-
+            
         }
 
         public void Disable()
         {
-            calculating = false;
+            GameObject.FindObjectOfType<MainGUI>().UnPause();
             this.enabled = false;
         }
 
@@ -285,30 +263,61 @@ namespace ImprovedNonAtmosphericLandings
         {
             //TODO: Conditioning.
             //Must be nonatmospheric
-            //Must be descending
             //Must be on suborbital path
             //Must have TWR > 1 at surface
             //Recommend disabling gimbal
             
             Logger.Info("Beginning calculation.");
-
-            //Set flags
-            success = false;
-            calculating = true;
-            this.enabled = true;
-
+            
             vessel = FlightGlobals.ActiveVessel;
             body = vessel.mainBody;
             changingMass = vessel.totalMass;
 
             //Sets the thrust, fuel flow, fuel mass and vessel height
             CalculateVesselParameters();
+            
+            //Check that we are descending
+            if (vessel.verticalSpeed > 0)
+            {
+                GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.VesselMustBeDescending);
+                Disable();
+                return;
+            }
+            if (thrust == 0)
+            {
+                GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.NoActiveEnginesDetected);
+                Disable();
+                return;
+            }
+            if (body.atmosphere)
+            {
+                GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.BodyMustHaveNoAtmosphere);
+                Disable();
+                return;
+            }
+            if (Double.IsNaN(ComputeImpactTime()))
+            {
+                GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.MustBeOnSubOrbitalTrajectory);
+                Disable();
+                return;
+            }
+            if (vessel.Landed)
+            {
+                GameObject.FindObjectOfType<MainGUI>().SetFatalError(Messages.VesselIsCurrentlyLanded);
+                Disable();
+                return;
+            }
+
+            
+
+            //Set enabled
+            this.enabled = true;
 
             //Reset the max burn time
             maxBurnTime = 0;
 
             t0 = Planetarium.GetUniversalTime();
-            
+
             //The time at which we start retrograde thrusting for the first trajectory
             startTimeOfThrust = 0;
 
@@ -365,7 +374,10 @@ namespace ImprovedNonAtmosphericLandings
                 startTimeOfThrust = (shortTime + longTime) / 2;
             }
 
-            
+            if (timeStep < minimumTimeStep)
+            {
+                //TODO: Send warning to user
+            }
 
             Logger.Info("Computing approximation " + trajectoryCount + " with " + integrationSteps + " integration steps. Start time of thrust is " + startTimeOfThrust);
             
@@ -779,7 +791,9 @@ namespace ImprovedNonAtmosphericLandings
                 {
                     if (requiredResources.Contains(resource))
                     {
-                        part.GetConnectedResources(resource.id, resource.resourceFlowMode, resourcesToBeUsed);
+                        List<PartResource> temp = new List<PartResource>(); 
+                        part.GetConnectedResources(resource.id, resource.resourceFlowMode, temp);
+                        resourcesToBeUsed.AddUniqueRange(temp);
                     }
                 }
             }
@@ -796,6 +810,18 @@ namespace ImprovedNonAtmosphericLandings
 
         #endregion
 
+
+        class Messages
+        {
+            public static readonly string TooLateToStartThrusting = "Too late to begin thrusting. Vessel cannot be brought to a stop before contact with the surface.";
+            public static readonly string MaybeInsufficientFuel = "Vessel may have insufficient fuel to land safely";
+            public static readonly string InsufficientFuel = "Vessel has insufficient fuel to land safely.";
+            public static readonly string VesselMustBeDescending = "Vessel must be descending in order to calculate descent path.";
+            public static readonly string NoActiveEnginesDetected = "No active engines detected on this vessel";
+            public static readonly string BodyMustHaveNoAtmosphere = "Can only compute optimal descent for non-atmospheric bodies.";
+            public static readonly string MustBeOnSubOrbitalTrajectory = "Vessel must be on suborbital trajectory.";
+            public static readonly string VesselIsCurrentlyLanded = "Vessel is currently landed.";
+        }
         
     }
 }
