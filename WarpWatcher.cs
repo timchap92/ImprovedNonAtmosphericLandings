@@ -40,7 +40,7 @@ namespace ImprovedNonAtmosphericLandings
             updateTime = currentTime - previousTime;
             previousTime = currentTime;
             
-            if (currentTime + updateTime > stopUT - 60)
+            if (currentTime + updateTime > stopUT - 60 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH) //Only checks warp if it is not in physics mode
             {
                 if (currentTime + updateTime > stopUT - 10)
                 {
@@ -56,6 +56,7 @@ namespace ImprovedNonAtmosphericLandings
                     else
                     {
                         stableCount = 0;
+
                         TimeWarp.SetRate(0, true);
                     }
                     if (currentTime > stopUT)
@@ -82,11 +83,26 @@ namespace ImprovedNonAtmosphericLandings
                     }
                 }
             }
+            else if (TimeWarp.WarpMode == TimeWarp.Modes.LOW)
+            {
+                this.stable = true;
+                if (currentTime > stopUT)
+                {
+                    this.enabled = false;
+                }
+                //TODO: Send warning to user to disable physics warp
+            }
+        }
+
+        public void Disable()
+        {
+            this.enabled = false;
+            TimeWarp.SetRate(0, true);
         }
 
         public bool IsTimeWarpStable()
         {
-            return (TimeWarp.CurrentRate == 1 && stable);
+            return ((TimeWarp.CurrentRate == 1 || TimeWarp.WarpMode == TimeWarp.Modes.LOW) && stable);
         }
 
         //<summary>
