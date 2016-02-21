@@ -17,21 +17,51 @@ namespace ImprovedNonAtmosphericLandings
         private ScreenMessage screenMessage;
         private bool paused = false;
         private string failReason;
-
+        private List<string> warnings = new List<string>();
+        private string warningString;
         private InalCalculator inalCalculator;
         private InalAutopilot autopilot;
-
         private GUI.WindowFunction currentWindow;
-
+        
         /// <summary>
         /// Privately settable window property. Ensures that the height of the window is reset when the window changes
         /// </summary>
-        public GUI.WindowFunction CurrentWindow
+        private GUI.WindowFunction CurrentWindow
         {
             set
             {
+                mainWindowPosition.width = 300;
                 mainWindowPosition.height = 0;
                 currentWindow = value;
+            }
+        }
+
+        public void AddWarning(string s)
+        {
+            if (!warnings.Contains(s))
+            {
+                warnings.AddUnique(s);
+            }
+            RenderWarningString();
+        }
+
+        public void RemoveWarning(string s)
+        {
+            warnings.Remove(s);
+
+            RenderWarningString();
+        }
+
+        private void RenderWarningString()
+        {
+            warningString = string.Empty;
+            foreach (string warning in warnings)
+            {
+                warningString += "- " + warning + "\n";
+            }
+            if (warningString != string.Empty)
+            {
+                warningString = warningString.Substring(0, warningString.Length - 1);
             }
         }
 
@@ -138,21 +168,26 @@ namespace ImprovedNonAtmosphericLandings
             GUILayout.BeginHorizontal();
             GUILayout.BeginVertical();
             GUILayout.Label("Trajectory number: ");
+            GUILayout.Label("Thrust start T minus: ");
             GUILayout.Label("Time step:");
             GUILayout.Label("Burn time: ");
             GUILayout.Space(10.0F);
-            GUILayout.Label("Final stop height (m): ");
+            GUILayout.Label("Best stop height (m): ");
             GUILayout.EndVertical();
             GUILayout.BeginVertical();
             GUILayout.TextArea(inalCalculator.GetTrajectory().ToString());
+            GUILayout.TextArea(inalCalculator.GetStartTimeOfThrust().ToString("N2"));
             GUILayout.TextArea(inalCalculator.GetTimeStep().ToString("N4"));
-            GUILayout.TextArea(inalCalculator.GetBurnTime());
+            GUILayout.TextArea(inalCalculator.GetBurnTimeString());
             GUILayout.Space(10.0F);
             GUILayout.TextArea(inalCalculator.GetAltitudeOffer());
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
 
             DrawAcceptButton();
+
+            GUILayout.Label("Warnings:");
+            GUILayout.TextArea(warningString);
 
             EndWindow();
         }
@@ -162,6 +197,7 @@ namespace ImprovedNonAtmosphericLandings
             if(Planetarium.GetUniversalTime() > inalCalculator.GetResultUT())
             {
                 CurrentWindow = Idle;
+                Idle(windowID);
                 return;
             }
 
@@ -209,8 +245,8 @@ namespace ImprovedNonAtmosphericLandings
 
             GUILayout.BeginVertical();
             GUILayout.TextArea(autopilot.GetState().ToString());
-            GUILayout.TextArea(inalCalculator.GetTMinus());
-            GUILayout.TextArea(inalCalculator.GetETA());
+            GUILayout.TextArea(inalCalculator.GetTMinusString());
+            GUILayout.TextArea(inalCalculator.GetETAString());
             GUILayout.EndHorizontal();
             GUILayout.EndHorizontal();
 
@@ -235,7 +271,6 @@ namespace ImprovedNonAtmosphericLandings
         private void EndWindow()
         {
             GUILayout.EndVertical();
-            GUILayout.Space(5.0f);
             GUI.DragWindow();
         }
 
@@ -253,6 +288,9 @@ namespace ImprovedNonAtmosphericLandings
             {
                 Pause();
                 screenMessage = ScreenMessages.PostScreenMessage("Pausing for calculation");
+
+                warnings = new List<string>();
+                warningString = String.Empty;
 
                 CurrentWindow = Calculating;
                 inalCalculator.BeginCalculation();
@@ -294,7 +332,7 @@ namespace ImprovedNonAtmosphericLandings
         {
             GUILayout.BeginHorizontal();
             GUILayout.Label("T Minus: ");
-            GUILayout.TextArea(inalCalculator.GetTMinus());
+            GUILayout.TextArea(inalCalculator.GetTMinusString());
             GUILayout.EndHorizontal();
         }
 

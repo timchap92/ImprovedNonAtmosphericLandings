@@ -56,7 +56,6 @@
     <Compile Include="InalAutopilot.cs" />
     <Compile Include="InalCalculator.cs" />
     <Compile Include="MainGUI.cs" />
-    <Compile Include="OldCalculator.cs" />
     <Compile Include="OptionsGUI.cs" />
     <Compile Include="Resources.cs" />
     <Compile Include="Logger.cs" />

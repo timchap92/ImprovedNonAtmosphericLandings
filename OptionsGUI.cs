@@ -14,7 +14,10 @@ namespace ImprovedNonAtmosphericLandings
         private bool drawWindow = false;
         private String kpAsString;
         private String kdAsString;
+        private String maxSpeedAsString;
         private InalAutopilot autopilot;
+        private InalCalculator calculator;
+
 
         public void Start()
         {
@@ -23,6 +26,7 @@ namespace ImprovedNonAtmosphericLandings
             try
             {
                 autopilot = GameObject.FindObjectOfType<InalAutopilot>();
+                calculator = GameObject.FindObjectOfType<InalCalculator>();
             }
             catch (Exception e)
             {
@@ -44,6 +48,7 @@ namespace ImprovedNonAtmosphericLandings
 
         public void open()
         {
+            maxSpeedAsString = calculator.GetMaxSpeed().ToString();
             kpAsString = autopilot.GetKp().ToString();
             kdAsString = autopilot.GetKd().ToString();
             drawWindow = true;
@@ -68,6 +73,12 @@ namespace ImprovedNonAtmosphericLandings
         {
             GUILayout.BeginVertical();
             GUILayout.Space(5.0f);
+            GUILayout.Label("Landing settings: ");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Max. landing speed: ");
+            maxSpeedAsString = GUILayout.TextField(maxSpeedAsString);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5.0f);
             GUILayout.Label("Autopilot PID: ");
             GUILayout.BeginHorizontal();
             GUILayout.BeginVertical();
@@ -86,24 +97,40 @@ namespace ImprovedNonAtmosphericLandings
             {
                 float kp;
                 float kd;
+                float maxSpeed;
 
                 if (!float.TryParse(kpAsString, out kp))
                 {
-                    Logger.Info("Invalid input");
+                    Logger.Info("Invalid input in Kp field");
                     kpAsString = autopilot.GetKp().ToString();
                 }
                 else
                 {
                     autopilot.SetKp(kp);
                 }
+
                 if (!float.TryParse(kdAsString, out kd))
                 {
-                    Logger.Info("Invalid input");
+                    Logger.Info("Invalid input in Kd field");
                     kdAsString = autopilot.GetKd().ToString();
                 }
                 else
                 {
                     autopilot.SetKd(kd);
+                }
+
+                if (!float.TryParse(maxSpeedAsString, out maxSpeed))
+                {
+                    Logger.Info("Invalid input in max speed field");
+                    kdAsString = autopilot.GetKd().ToString();
+                }
+                else
+                {
+                    calculator.SetMaxSpeed(maxSpeed);
+                    if (autopilot.IsActive())
+                    {
+                        autopilot.SetMaxSpeed(maxSpeed);
+                    }
                 }
             }
             GUILayout.EndVertical();

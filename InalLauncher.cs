@@ -24,7 +24,6 @@ namespace ImprovedNonAtmosphericLandings
             try
             {
                 GameEvents.onGUIApplicationLauncherReady.Add(OnGuiAppLauncherReady);
-                Logger.Info("Added listener.");
             }
             catch (Exception ex)
             {
@@ -50,7 +49,6 @@ namespace ImprovedNonAtmosphericLandings
             {
                 ApplicationLauncher.Instance.RemoveModApplication(button);
             }
-            Logger.Info("Application was removed.");
         }
 
         //Adds the application to the toolbar and registers behaviours
@@ -61,7 +59,6 @@ namespace ImprovedNonAtmosphericLandings
             //Add application
             button = ApplicationLauncher.Instance.AddModApplication(OnButtonClick, OnButtonUnclick, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT, iconTexture);
             gui = button.gameObject.AddComponent<MainGUI>();
-            Logger.Info("Added application.");
         }
         
         private void OnButtonClick()
@@ -88,12 +85,6 @@ namespace ImprovedNonAtmosphericLandings
             //Close gui window
             gui.close();
         }
-
-        private void OnGUI()
-        {
-            //Logger.Info("Gui triggered (Launcher)");
-        }
-
     }
     
 }

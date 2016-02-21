@@ -11,19 +11,24 @@ namespace ImprovedNonAtmosphericLandings
     {
         private static readonly String prefix = "[ImprovedNonAtmosphericLandings]: ";
 
+        public static void Debug(String msg)
+        {
+            //UnityEngine.Debug.Log(prefix + msg);
+        }
+
         public static void Info(String msg)
         {
-            Debug.Log(prefix + msg);
+            UnityEngine.Debug.Log(prefix + msg);
         }
 
         public static void Warn(String msg)
         {
-            Debug.LogWarning(prefix + msg);
+            UnityEngine.Debug.LogWarning(prefix + msg);
         }
 
         public static void Error(String msg)
         {
-            Debug.LogError(prefix + msg);
+            UnityEngine.Debug.LogError(prefix + msg);
         }
     }
 }

@@ -14,8 +14,7 @@ namespace ImprovedNonAtmosphericLandings
 
         public EstimatePair()
         {
-            //this.lower = default(T);
-            //this.upper = default(T);
+
         }
 
         public EstimatePair(T lower, T upper)

@@ -17,6 +17,7 @@ namespace ImprovedNonAtmosphericLandings
         private int stableCount;
         private bool stable;
 
+        //Disable this monobehaviour on awake
         private void Awake()
         {
             this.enabled = false;
@@ -24,7 +25,7 @@ namespace ImprovedNonAtmosphericLandings
 
         public void Activate(double stopUT)
         {
-            Logger.Info("WarpWatcher activated");
+            Logger.Debug("WarpWatcher activated");
             this.stopUT = stopUT;
             this.previousTime = Planetarium.GetUniversalTime();
             this.enabled = true;
@@ -40,6 +41,7 @@ namespace ImprovedNonAtmosphericLandings
             updateTime = currentTime - previousTime;
             previousTime = currentTime;
             
+            //Set warp to 5x when within one minute of thrust, and 1x when within 10sec.
             if (currentTime + updateTime > stopUT - 60 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH) //Only checks warp if it is not in physics mode
             {
                 if (currentTime + updateTime > stopUT - 10)
@@ -49,7 +51,7 @@ namespace ImprovedNonAtmosphericLandings
                         stableCount++;
                         if (stableCount > 3)
                         {
-                            Logger.Info("Time warp is stable at 1x.");
+                            Logger.Debug("Time warp is stable at 1x.");
                             this.stable = true;
                         }
                     }
@@ -62,7 +64,7 @@ namespace ImprovedNonAtmosphericLandings
                     if (currentTime > stopUT)
                     {
                         this.enabled = false;
-                        Logger.Info("Time has passed the target UT. Disabling WarpWatcher.");
+                        Logger.Debug("Time has passed the target UT. Disabling WarpWatcher.");
                     }
                 }
                 else
@@ -77,7 +79,7 @@ namespace ImprovedNonAtmosphericLandings
                         stableCount++;
                         if (stableCount > 3)
                         {
-                            Logger.Info("Time warp is stable at 1x.");
+                            Logger.Debug("Time warp is stable at 1x.");
                             this.stable = true;
                         }
                     }
@@ -94,12 +96,21 @@ namespace ImprovedNonAtmosphericLandings
             }
         }
 
+        /// <summary>
+        /// Disables this monobehaviour
+        /// </summary>
         public void Disable()
         {
             this.enabled = false;
             TimeWarp.SetRate(0, true);
         }
 
+        /// <summary>
+        /// Returns true if:
+        /// a) Timewarp has been 1x for at least 3 updates
+        /// b) Timewarp is in physics mode
+        /// </summary>
+        /// <returns></returns>
         public bool IsTimeWarpStable()
         {
             return ((TimeWarp.CurrentRate == 1 || TimeWarp.WarpMode == TimeWarp.Modes.LOW) && stable);
@@ -111,7 +122,7 @@ namespace ImprovedNonAtmosphericLandings
         private void StartWarp()
         {
             double currentTime = Planetarium.GetUniversalTime();
-            Logger.Info("Time until target UT is " + (stopUT - currentTime));
+            Logger.Debug("Time until target UT is " + (stopUT - currentTime));
             if (currentTime < stopUT - 60)
             {
                 float[] rates = TimeWarp.fetch.warpRates;
@@ -124,7 +135,7 @@ namespace ImprovedNonAtmosphericLandings
                     if (altitude < altitudeLimit || rates[i] > 1000F) //If this warp rate is NOT allowed
                     {
                         //Use the previous rate
-                        Logger.Info("Setting warp to rate index " + (i - 1));
+                        Logger.Debug("Setting warp to rate index " + (i - 1));
                         TimeWarp.SetRate(i - 1, false);
                         return;
                     }
