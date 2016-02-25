@@ -15,6 +15,7 @@ namespace ImprovedNonAtmosphericLandings
         private String kpAsString;
         private String kdAsString;
         private String maxSpeedAsString;
+        private String gimbalPercentAsString ="0";
         private InalAutopilot autopilot;
         private InalCalculator calculator;
 
@@ -88,16 +89,23 @@ namespace ImprovedNonAtmosphericLandings
             GUILayout.BeginVertical();
             kpAsString = GUILayout.TextField(kpAsString);
             kdAsString = GUILayout.TextField(kdAsString);
-            
             GUILayout.EndVertical();
             GUILayout.EndHorizontal();
-            
+
+            GUILayout.Label("Vessel Adjustments:");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Gimbal %: ");
+            gimbalPercentAsString = GUILayout.TextField(gimbalPercentAsString);
+            GUILayout.EndHorizontal();
+
             GUILayout.Space(5.0f);
+            GUILayout.BeginHorizontal();
             if (GUILayout.Button("Submit"))
             {
                 float kp;
                 float kd;
                 float maxSpeed;
+                float gimbalPercent;
 
                 if (!float.TryParse(kpAsString, out kp))
                 {
@@ -132,9 +140,62 @@ namespace ImprovedNonAtmosphericLandings
                         autopilot.SetMaxSpeed(maxSpeed);
                     }
                 }
+
+                if (!float.TryParse(gimbalPercentAsString, out gimbalPercent))
+                {
+                    Logger.Info("Invalid input in gimbal percent field");
+                    gimbalPercentAsString = "Invalid input";
+                }
+                else
+                {
+                    if (gimbalPercent > 100)
+                    {
+                        gimbalPercent = 100;
+                        gimbalPercentAsString = "100";
+                    }
+                    else if (gimbalPercent < 0)
+                    {
+                        gimbalPercent = 0;
+                        gimbalPercentAsString = "0";
+                    }
+
+                    SetGimbals(gimbalPercent);
+                }
+
+                toggle();
             }
+            if (GUILayout.Button("Cancel"))
+            {
+                toggle();
+            }
+            GUILayout.EndHorizontal();
             GUILayout.EndVertical();
             GUI.DragWindow();
+        }
+
+        private void SetGimbals(float percent)
+        {
+            List<Part> parts = FlightGlobals.ActiveVessel.GetActiveParts();
+
+            foreach (Part part in parts)
+            {
+                List<ModuleGimbal> gimbalModules = part.Modules.GetModules<ModuleGimbal>();
+
+                //Set each gimbal
+                foreach (ModuleGimbal module in gimbalModules)
+                {
+                    if (percent == 0)
+                    {
+                        Logger.Debug("Locking gimbals");
+                        module.Fields.SetValue("gimbalLock", true);
+                    }
+                    else
+                    {
+                        Logger.Debug("Limiting gimbals");
+                        module.Fields.SetValue("gimbalLimiter", percent);
+                    }
+                }
+            }
         }
     }
 }
