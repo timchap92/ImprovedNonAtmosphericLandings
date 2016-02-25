@@ -57,7 +57,7 @@ namespace ImprovedNonAtmosphericLandings
             //Load icon texture
             Texture iconTexture = GameDatabase.Instance.GetTexture(Resources.iconPath, false);
             //Add application
-            button = ApplicationLauncher.Instance.AddModApplication(OnButtonClick, OnButtonUnclick, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT, iconTexture);
+            button = ApplicationLauncher.Instance.AddModApplication(OnButtonClick, OnButtonUnclick, null, null, null, null, ApplicationLauncher.AppScenes.FLIGHT | ApplicationLauncher.AppScenes.MAPVIEW, iconTexture);
             gui = button.gameObject.AddComponent<MainGUI>();
         }
         
