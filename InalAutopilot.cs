@@ -250,9 +250,12 @@ namespace ImprovedNonAtmosphericLandings
                 isActive = false;
                 previousTime = 0;
             }
-            if (warpWatcher.enabled)
+            if (warpWatcher != null)
             {
-                warpWatcher.Disable();
+                if (warpWatcher.enabled)
+                {
+                    warpWatcher.Disable();
+                }
             }
         }
 
