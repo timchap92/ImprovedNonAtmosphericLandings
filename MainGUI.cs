@@ -208,6 +208,9 @@ namespace ImprovedNonAtmosphericLandings
 
             GUILayout.Space(10.0f);
             DrawTMinus();
+            DrawDeltaV();
+            DrawLandingLat();
+            DrawLandingLon();
             DrawActivateAutopilotButton();
 
             EndWindow();
@@ -241,12 +244,18 @@ namespace ImprovedNonAtmosphericLandings
             GUILayout.Label("State: ");
             GUILayout.Label("T Minus: ");
             GUILayout.Label("ETA (approx): ");
+            GUILayout.Label("Total delta-V required: ");
+            GUILayout.Label("Landing Latitude: ");
+            GUILayout.Label("Landing Longitude: ");
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical();
             GUILayout.TextArea(autopilot.GetState().ToString());
             GUILayout.TextArea(inalCalculator.GetTMinusString());
             GUILayout.TextArea(inalCalculator.GetETAString());
+            GUILayout.TextArea(inalCalculator.GetDeltaV());
+            GUILayout.TextArea(inalCalculator.GetLandingLat());
+            GUILayout.TextArea(inalCalculator.GetLandingLon());
             GUILayout.EndHorizontal();
             GUILayout.EndHorizontal();
 
@@ -333,6 +342,30 @@ namespace ImprovedNonAtmosphericLandings
             GUILayout.BeginHorizontal();
             GUILayout.Label("T Minus: ");
             GUILayout.TextArea(inalCalculator.GetTMinusString());
+            GUILayout.EndHorizontal();
+        }
+
+        private void DrawDeltaV()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Delta-V: ");
+            GUILayout.TextArea(inalCalculator.GetDeltaV());
+            GUILayout.EndHorizontal();
+        }
+
+        private void DrawLandingLat()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Landing Latitude: ");
+            GUILayout.TextArea(inalCalculator.GetLandingLat());
+            GUILayout.EndHorizontal();
+        }
+
+        private void DrawLandingLon()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Landing Longitude: ");
+            GUILayout.TextArea(inalCalculator.GetLandingLon());
             GUILayout.EndHorizontal();
         }
 
